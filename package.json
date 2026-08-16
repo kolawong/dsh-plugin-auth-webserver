@@ -1,0 +1,33 @@
+{
+  "name": "dsh-plugin-auth-webserver",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin providing HTTP Basic Authentication, remote IP access, and Web Cryptography UUID polyfill for self-hosted server deployments.",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "basic-auth",
+    "authentication",
+    "webserver",
+    "remote-access"
+  ],
+  "author": "kola",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kolawong/dsh-plugin-auth-webserver.git"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^ || >=0.1.0",
+    "@deepseek-ai/schemastery": "workspace:^ || >=0.1.0"
+  }
+}
