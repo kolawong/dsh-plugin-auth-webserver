@@ -1,10 +1,26 @@
 {
   "name": "dsh-plugin-auth-webserver",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness plugin providing HTTP Basic Authentication, remote IP access, and Web Cryptography UUID polyfill for self-hosted server deployments.",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness plugin providing HTTP Basic Authentication, Web UI Settings Card, remote IP access, and Web Cryptography UUID polyfill for self-hosted server deployments.",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ],
+      "platform": "web"
+    }
+  },
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
@@ -12,6 +28,7 @@
     "basic-auth",
     "authentication",
     "webserver",
+    "ui-settings",
     "remote-access"
   ],
   "author": "kola",
@@ -22,6 +39,7 @@
   },
   "files": [
     "index.js",
+    "client.js",
     "index.d.ts",
     "README.md",
     "LICENSE"

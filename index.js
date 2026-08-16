@@ -5,11 +5,13 @@
  * 1. HTTP Basic Authentication & WebSocket Upgrade protection
  * 2. Automatic crypto.randomUUID polyfill for non-HTTPS / raw IP web clients
  * 3. Remote IP privileged RPC gateway trust delegation
+ * 4. Interactive Web UI Settings Card integration & live auth update API
  *
  * @license MIT
  */
 
 import { createServer } from "node:http";
+import { writeFileSync } from "node:fs";
 import { Service } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
 
@@ -35,6 +37,81 @@ export class AuthWebServer extends Service {
   constructor(ctx, config) {
     super(ctx, "webServer");
     this.config = config;
+
+    // Register Auth Settings APIs
+    this.register({
+      kind: "exact",
+      path: "/api/auth.get",
+      handler: async (req, res) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: true,
+          username: this.config.username || "admin",
+          password: this.config.password || "",
+          realm: this.config.realm || "DeepSeek Harness Authentication"
+        }));
+      }
+    });
+
+    this.register({
+      kind: "exact",
+      path: "/api/auth.update",
+      handler: async (req, res) => {
+        if (req.method !== "POST") {
+          res.writeHead(405);
+          res.end();
+          return;
+        }
+        let body = "";
+        req.on("data", (c) => { body += c; });
+        req.on("end", () => {
+          try {
+            const data = JSON.parse(body);
+            if (data.username !== undefined) this.config.username = String(data.username);
+            if (data.password !== undefined) this.config.password = String(data.password);
+            if (data.realm !== undefined) this.config.realm = String(data.realm);
+
+            // Persist to cordis.patch.yml
+            this.persistPatch();
+
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              ok: true,
+              username: this.config.username,
+              realm: this.config.realm
+            }));
+          } catch (err) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: err.message }));
+          }
+        });
+      }
+    });
+  }
+
+  persistPatch() {
+    try {
+      const patchPath = "/root/.dsh/profiles/web/cordis.patch.yml";
+      const u = (this.config.username || "admin").replace(/'/g, "''");
+      const p = (this.config.password || "").replace(/'/g, "''");
+      const content = `- id: webserver
+  disabled: true
+
+- insert:
+    - id: webserver-auth
+      name: '@custom/dsh-plugin-auth-webserver'
+      inject:
+        - webStartup
+      config:
+        host: '0.0.0.0'
+        port: !!js ctx.webStartup.port ?? 3080
+        username: '${u}'
+        password: '${p}'
+`;
+      writeFileSync(patchPath, content, "utf8");
+    } catch (e) {
+      this.ctx.logger.warn("Failed to persist cordis.patch.yml:", e);
+    }
   }
 
   get port() {
@@ -88,7 +165,6 @@ export class AuthWebServer extends Service {
     const expectedUser = process.env.DSH_AUTH_USER || this.config.username || "admin";
     const expectedPass = process.env.DSH_AUTH_PASS || this.config.password || "";
 
-    // If no password is configured, allow open access
     if (!expectedPass) {
       return true;
     }
@@ -112,8 +188,6 @@ export class AuthWebServer extends Service {
   }
 
   applySecurityHeaders(req) {
-    // Internal loopback normalization: once authenticated, normalize Host/Origin
-    // so downstream loopback fences (e.g. privileged settings/preset RPCs) recognize trust
     const port = this.listenedPort || 3080;
     if (req.headers.host && !req.headers.host.startsWith("127.0.0.1") && !req.headers.host.startsWith("localhost")) {
       req.headers["x-forwarded-host"] = req.headers.host;
@@ -126,10 +200,9 @@ export class AuthWebServer extends Service {
   }
 
   async [Service.init]() {
-    const realm = this.config.realm || "DeepSeek Harness Authentication";
-
     const handle = async (req, res) => {
       if (!this.checkAuth(req)) {
+        const realm = this.config.realm || "DeepSeek Harness Authentication";
         res.writeHead(401, {
           "WWW-Authenticate": `Basic realm="${realm}"`,
           "Content-Type": "text/html; charset=utf-8"
@@ -274,8 +347,8 @@ export class AuthWebServer extends Service {
 })();
 </script>`;
 
-    if (out.includes("<head>")) {
-      out = out.replace("<head>", "<head>" + polyfill);
+    if (out.includes('<head>')) {
+      out = out.replace('<head>', '<head>' + polyfill);
     } else {
       out = polyfill + out;
     }
