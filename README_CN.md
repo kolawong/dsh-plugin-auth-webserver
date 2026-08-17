@@ -1,12 +1,17 @@
+<p align="center">
+  <img src="assets/hero.png" alt="DeepSeek Harness Web 访问安全认证插件" width="100%">
+</p>
+
+<div align="center">
+
 # dsh-plugin-auth-webserver
 
 [![GitHub license](https://img.shields.io/github/license/kolawong/dsh-plugin-auth-webserver?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/kolawong/dsh-plugin-auth-webserver?style=flat-square)](https://github.com/kolawong/dsh-plugin-auth-webserver/stargazers)
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-Cordis%20Plugin-blue?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 
-**DeepSeek Harness (DSH) 原生 Web 安全认证与登录插件。** 为公网服务器部署、局域网共享和多设备远程访问提供深度匹配原生外观的 **Web 登录界面**、**HMAC Cookie 会话保持**、**HTTP Basic Auth 兼容**、**Web GUI 可视化设置卡片**、**远端 IP 特权 RPC 信任委托** 以及 **非 HTTPS / 裸 IP 环境 Web Crypto UUID 自动 Polyfill**。
-
-<div align="center">
+**DeepSeek Harness (DSH) 原生 Web 安全认证与登录插件。**
+为云服务器部署、局域网共享和多设备远程访问提供原生外观的 **Web 登录界面**、**Cookie 会话保持**、**Basic Auth 兼容**、**Web GUI 可视化设置** 以及 **Web Crypto Polyfill**。
 
 [English](README.md) | 🌐 **简体中文**
 

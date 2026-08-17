@@ -1,12 +1,17 @@
+<p align="center">
+  <img src="assets/hero.png" alt="DeepSeek Harness Web Authentication Plugin" width="100%">
+</p>
+
+<div align="center">
+
 # dsh-plugin-auth-webserver
 
 [![GitHub license](https://img.shields.io/github/license/kolawong/dsh-plugin-auth-webserver?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/kolawong/dsh-plugin-auth-webserver?style=flat-square)](https://github.com/kolawong/dsh-plugin-auth-webserver/stargazers)
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-Cordis%20Plugin-blue?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 
-**DeepSeek Harness (DSH) native Web Authentication plugin.** Providing a tailored dark-theme **Web Login Page**, **HMAC Cookie Sessions**, **HTTP Basic Auth Fallback**, **Web GUI Settings Card**, **Remote IP Privileged RPC Trust Delegation**, and **Web Crypto UUID Polyfill** for self-hosted and remote cloud server deployments.
-
-<div align="center">
+**Native Web Authentication & Login plugin for DeepSeek Harness (DSH).**
+Give your self-hosted server deployment a DSH-styled **Web Login Page**, **Cookie Sessions**, **Basic Auth fallback**, **Web UI Settings Card**, and **Web Crypto Polyfill**.
 
 🌐 **English** | [简体中文](README_CN.md)
 
