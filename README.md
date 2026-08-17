@@ -1,126 +1,50 @@
 # dsh-plugin-auth-webserver
 
-English | [简体中文](#简体中文)
+[![GitHub license](https://img.shields.io/github/license/kolawong/dsh-plugin-auth-webserver?style=flat-square)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/kolawong/dsh-plugin-auth-webserver?style=flat-square)](https://github.com/kolawong/dsh-plugin-auth-webserver/stargazers)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-Cordis%20Plugin-blue?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 
-A drop-in **DeepSeek Harness (`dsh`)** Cordis plugin providing **HTTP Basic Authentication**, **Remote IP & Mobile Device Access**, **Web Cryptography UUID Polyfills**, and **Privileged RPC Gateway Delegation** for self-hosted server deployments.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Cordis Plugin](https://img.shields.io/badge/Cordis-Plugin-blue.svg)](https://github.com/cordiverse/cordis)
-[![Topic: dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-green.svg)](https://github.com/topics/dsh-plugin)
+**DeepSeek Harness (DSH)** 专属的 Web 安全认证与登录插件。为公网服务器部署、局域网共享和多设备远程访问提供原生外观的 **Web 登录界面 (Web Login Page)**、**Cookie/Session 会话保持**、**HTTP Basic Auth 兼容**、**Web UI 可视化设置卡片** 以及 **非 HTTPS / 裸 IP 环境 Web Crypto UUID 自动 Polyfill**。
 
 ---
 
-## 🚀 Key Features
+## ✨ 核心特性 (Features)
 
-* 🔒 **HTTP Basic Authentication**: Native browser popup login for cross-device web access (iPhone, iPad, Android, macOS, Windows).
-* 🛡️ **Zero Code Modification**: 100% non-intrusive Cordis overlay patch; your upstream `deepseek-harness` git worktree stays completely clean for seamless `git pull` updates.
-* 🌐 **Raw IP & Mobile Device Support**: Solves the browser `crypto.randomUUID is not a function` error on plain HTTP / public IP setups by injecting a compliant Web Cryptography UUID Polyfill at `<head>` load time.
-* 🔑 **Settings & Presets RPC Trust**: Unlocks privileged settings endpoints (`settings.describe`, `agentPreset.*`) for authenticated remote IP clients without triggering HTTP 403.
-* ⚡ **WebSocket Downlinks Protection**: Securely guards live streaming chat connections and event multiplexing.
-
----
-
-## 📦 Installation
-
-### Step 1: Clone the plugin to your DSH plugins directory
-
-```bash
-mkdir -p ~/.dsh/plugins
-git clone https://github.com/kolawong/dsh-plugin-auth-webserver.git ~/.dsh/plugins/dsh-plugin-auth-webserver
-```
-
-### Step 2: Register package link in DSH environment
-
-```bash
-mkdir -p ~/.dsh/node_modules/@custom
-ln -sfn ~/.dsh/plugins/dsh-plugin-auth-webserver ~/.dsh/node_modules/@custom/dsh-plugin-auth-webserver
-```
-
-### Step 3: Enable the patch overlay
-
-Add the following configuration to `~/.dsh/profiles/web/cordis.patch.yml` (create the file if it does not exist):
-
-```yaml
-# Disable default unauthenticated webserver
-- id: webserver
-  disabled: true
-
-# Insert authenticated webserver
-- insert:
-    - id: webserver-auth
-      name: '@custom/dsh-plugin-auth-webserver'
-      inject:
-        - webStartup
-      config:
-        host: '0.0.0.0'
-        port: 3080
-        username: 'admin'
-        password: 'YourStrongPasswordHere'
-        realm: 'DeepSeek Harness'
-```
-
-### Step 4: Start DeepSeek Harness
-
-```bash
-dsh web --port 3080 --trusted-host your-server-ip:3080
-```
-
-> **Tip (Environment Variables)**: You can also specify credentials via environment variables:
-> ```bash
-> export DSH_AUTH_USER="admin"
-> export DSH_AUTH_PASS="YourStrongPasswordHere"
-> ```
+1. **🎨 深度匹配 DSH 原生美学的 Web 登录界面**：
+   - 告别浏览器简陋的弹窗，提供暗黑毛玻璃质感、微光边框、DeepSeek 风格专属定制的网页登录页面。
+   - 响应式设计，完美适配 PC 与手机端浏览器。
+   - 支持密码显示/隐藏切换、错误抖动提示与一键回车提交。
+2. **🍪 安全无缝的 Cookie / Session 会话机制**：
+   - 登录成功后自动生成 30 天加密 HMAC 会话 Token，无需反复输入账号密码。
+   - 提供 `/api/auth.logout` 一键退出登录接口。
+3. **⚙️ Web GUI 可视化设置卡片**：
+   - 在 DSH 网页端 **「设置」->「插件（Plugins）」** 中直接查看与修改登录账号密码。
+   - 修改后立即热生效并自动回写持久化配置文件，无需重启服务。
+4. **🔌 全兼容机制**：
+   - 同时支持 `Cookie` 会话与 `HTTP Basic Auth` 标头，方便命令行脚本、API 与自动化工具无缝调用。
+   - 包含完整的 WebSocket (`upgrade`) 安全鉴权。
+5. **🛡️ 远端 IP 特权 RPC 网关信任委托**：
+   - 自动处理请求 `Host` / `Origin` 映射，彻底解决通过公网 IP 访问时 `settings.describe` 与 `agentPreset.*` 报 `HTTP 403 Forbidden` 的问题。
+6. **🔑 Web Crypto UUID 自动 Polyfill**：
+   - 自动在 Web 页面 `<head>` 中注入安全的 UUID 生成器，彻底解决非 HTTPS 或直接通过 IP 访问时客户端崩溃的问题。
 
 ---
 
-## ⚙️ Configuration Reference
+## 📦 安装与配置 (Installation)
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `host` | `string` | `'0.0.0.0'` | Bind network interface (`'0.0.0.0'` for all interfaces, `'127.0.0.1'` for local only) |
-| `port` | `number` | `3080` | Listening port for the web server |
-| `username` | `string` | `'admin'` | Basic Auth username (or use `DSH_AUTH_USER`) |
-| `password` | `string` | `''` | Basic Auth password (or use `DSH_AUTH_PASS`). If empty, authentication is disabled |
-| `realm` | `string` | `'DeepSeek Harness Authentication'` | HTTP Basic Auth realm prompt displayed by browsers |
+### 1. 安装插件到 DSH 插件目录
 
----
-
-<br/>
-
----
-
-# 简体中文
-
-适用于 **DeepSeek Harness (`dsh`)** 的一站式服务器远程部署与密码认证 Cordis 插件。
-
-为自建服务器 / VPS / 移动专线部署提供 **HTTP Basic 密码认证**、**跨设备与原生 IP 支持**、**前端 UUID 兼容补丁** 以及 **管理接口特权放行**。
-
-## 🌟 核心优势
-
-1. **多设备原生密码保护**：手机（iOS Safari、Android Chrome）、平板、电脑打开网页时，自动弹出原生账号密码框，输一次即可保持登录。
-2. **零源码侵入（Zero Modification）**：基于 Cordis 分层补丁机制，主仓库 `deepseek-harness` 保持 100% 纯净，后续 `git pull` 升级绝无冲突。
-3. **修复纯 IP 访问报错**：解决浏览器在非 HTTPS / 纯 IP 环境下因缺少 `crypto.randomUUID` 导致「Agent 预设」、「权限」无法加载的问题。
-4. **管理接口安全放行**：通过内部安全代理映射，放行经过认证的外部 IP 访问 `settings.describe` 和 `agentPreset` 等敏感管理接口（免除 403 拦截）。
-
-## 📖 快速上手
-
-### 1. 克隆插件到 DSH 用户目录
+在 DSH 运行环境的插件目录下安装：
 
 ```bash
-mkdir -p ~/.dsh/plugins
-git clone https://github.com/kolawong/dsh-plugin-auth-webserver.git ~/.dsh/plugins/dsh-plugin-auth-webserver
+mkdir -p ~/.dsh/plugins/dsh-plugin-auth-webserver
+cd ~/.dsh/plugins/dsh-plugin-auth-webserver
+git clone https://github.com/kolawong/dsh-plugin-auth-webserver.git .
 ```
 
-### 2. 建立包映射软链接
+### 2. 配置 Web Profile 补丁
 
-```bash
-mkdir -p ~/.dsh/node_modules/@custom
-ln -sfn ~/.dsh/plugins/dsh-plugin-auth-webserver ~/.dsh/node_modules/@custom/dsh-plugin-auth-webserver
-```
-
-### 3. 配置补丁文件
-
-编辑 `~/.dsh/profiles/web/cordis.patch.yml`：
+在 `~/.dsh/profiles/web/cordis.patch.yml` 中添加：
 
 ```yaml
 - id: webserver
@@ -133,19 +57,25 @@ ln -sfn ~/.dsh/plugins/dsh-plugin-auth-webserver ~/.dsh/node_modules/@custom/dsh
         - webStartup
       config:
         host: '0.0.0.0'
-        port: 3080
+        port: !!js ctx.webStartup.port ?? 3080
         username: 'admin'
-        password: '你的自定义密码'
+        password: 'your_secure_password'
 ```
 
-### 4. 启动或重启服务
+### 3. 重启 DSH 服务
 
 ```bash
-dsh web --port 3080 --trusted-host 你的服务器IP:3080
+# 如果使用 systemd 管理
+systemctl restart deepseek-harness
+
+# 或直接运行
+dsh web --port 3080
 ```
+
+打开浏览器访问 `http://your-server-ip:3080`，即可看到全新的 DSH 原生风格登录页面！
 
 ---
 
-## 📄 开源许可
+## 📄 开源许可证 (License)
 
-本项目基于 [MIT License](LICENSE) 开源。欢迎提交 Issue 与 Pull Request！
+本项目采用 [MIT 许可证](LICENSE)。

@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: "dsh-plugin-auth-webserver",
+  id: "@custom/dsh-plugin-auth-webserver",
   factory: (require) => {
     const exports = {};
     const React = require("react");
@@ -48,7 +48,7 @@ window.__ModuleLoader__.load({
             setSaving(false);
             if (data && data.ok) {
               setDirty(false);
-              setMsg({ type: "success", text: "✅ 账号密码已保存并立即生效！" });
+              setMsg({ type: "success", text: "✅ 账号密码已更新并立即生效！" });
             } else {
               setMsg({ type: "error", text: "❌ 保存失败: " + (data && data.error ? data.error : "未知错误") });
             }
@@ -62,6 +62,18 @@ window.__ModuleLoader__.load({
       const handleDiscard = () => {
         loadAuth();
         setMsg(null);
+      };
+
+      const handleLogout = () => {
+        if (confirm("确定要退出当前登录吗？")) {
+          fetch("/api/auth.logout", { method: "POST" })
+            .then(() => {
+              window.location.reload();
+            })
+            .catch(() => {
+              window.location.reload();
+            });
+        }
       };
 
       return jsx("li", {
@@ -100,7 +112,7 @@ window.__ModuleLoader__.load({
                     }),
                     jsx("span", {
                       style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #aaa)" },
-                      children: "配置远程访问与多设备登录的 HTTP Basic Auth 账号与密码"
+                      children: "配置远程访问、Web 登录界面密码与会话状态"
                     })
                   ]
                 }),
@@ -204,7 +216,7 @@ window.__ModuleLoader__.load({
                     }),
                     jsx("span", {
                       style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, #888)" },
-                      children: "提示：修改密码保存后立即生效。若修改了密码，浏览器下次请求会要求重新输入新密码。"
+                      children: "提示：修改密码后自动生效，未登录的用户在访问 Web 界面时将看到 DeepSeek 风格的登录页面。"
                     })
                   ]
                 }),
@@ -219,40 +231,59 @@ window.__ModuleLoader__.load({
                   children: msg.text
                 }) : null,
                 jsxs("div", {
-                  style: { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "6px" },
+                  style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" },
                   children: [
                     jsx("button", {
                       type: "button",
-                      disabled: !dirty || saving,
-                      onClick: handleDiscard,
+                      onClick: handleLogout,
                       style: {
                         padding: "6px 14px",
                         borderRadius: "6px",
-                        border: "1px solid var(--dsw-alias-border-l2, #444)",
-                        background: "transparent",
-                        color: "inherit",
-                        cursor: dirty && !saving ? "pointer" : "default",
-                        opacity: dirty && !saving ? 1 : 0.5,
+                        border: "1px solid rgba(255, 80, 80, 0.4)",
+                        background: "rgba(255, 60, 60, 0.1)",
+                        color: "#ff6b6b",
+                        cursor: "pointer",
                         fontSize: "13px"
                       },
-                      children: "放弃更改"
+                      children: "退出登录"
                     }),
-                    jsx("button", {
-                      type: "button",
-                      disabled: !dirty || saving,
-                      onClick: handleSave,
-                      style: {
-                        padding: "6px 16px",
-                        borderRadius: "6px",
-                        border: "none",
-                        background: "#3b82f6",
-                        color: "#fff",
-                        fontWeight: "500",
-                        cursor: dirty && !saving ? "pointer" : "default",
-                        opacity: dirty && !saving ? 1 : 0.5,
-                        fontSize: "13px"
-                      },
-                      children: saving ? "保存中..." : "保存设置"
+                    jsxs("div", {
+                      style: { display: "flex", gap: "10px" },
+                      children: [
+                        jsx("button", {
+                          type: "button",
+                          disabled: !dirty || saving,
+                          onClick: handleDiscard,
+                          style: {
+                            padding: "6px 14px",
+                            borderRadius: "6px",
+                            border: "1px solid var(--dsw-alias-border-l2, #444)",
+                            background: "transparent",
+                            color: "inherit",
+                            cursor: dirty && !saving ? "pointer" : "default",
+                            opacity: dirty && !saving ? 1 : 0.5,
+                            fontSize: "13px"
+                          },
+                          children: "放弃更改"
+                        }),
+                        jsx("button", {
+                          type: "button",
+                          disabled: !dirty || saving,
+                          onClick: handleSave,
+                          style: {
+                            padding: "6px 16px",
+                            borderRadius: "6px",
+                            border: "none",
+                            background: "#3b82f6",
+                            color: "#fff",
+                            fontWeight: "500",
+                            cursor: dirty && !saving ? "pointer" : "default",
+                            opacity: dirty && !saving ? 1 : 0.5,
+                            fontSize: "13px"
+                          },
+                          children: saving ? "保存中..." : "保存设置"
+                        })
+                      ]
                     })
                   ]
                 })
