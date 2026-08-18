@@ -249,35 +249,6 @@ window.__ModuleLoader__.load({
                 })
               ]
             }),
-                    jsx("span", {
-                      style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #aaa)" },
-                      children: t("description")
-                    })
-                  ]
-                }),
-                jsxs("div", {
-                  style: { display: "flex", alignItems: "center", gap: "8px" },
-                  children: [
-                    dirty ? jsx("span", {
-                      style: {
-                        fontSize: "11px",
-                        background: "rgba(255, 170, 0, 0.2)",
-                        color: "#ffaa00",
-                        padding: "2px 6px",
-                        borderRadius: "4px"
-                      },
-                      children: t("unsaved")
-                    }) : null,
-                    jsx(IconChevronDownOutline14, {
-                      style: {
-                        transform: open ? "rotate(180deg)" : "rotate(0deg)",
-                        transition: "transform 0.2s"
-                      }
-                    })
-                  ]
-                })
-              ]
-            }),
             open ? jsxs("div", {
               style: {
                 padding: "0 16px 16px 16px",
