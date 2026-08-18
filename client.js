@@ -175,15 +175,80 @@ window.__ModuleLoader__.load({
               },
               children: [
                 jsxs("div", {
-                  style: { display: "flex", flexDirection: "column", gap: "4px" },
+                  style: { display: "flex", alignItems: "center", gap: "12px" },
                   children: [
-                    jsxs("span", {
-                      style: { display: "flex", alignItems: "center", gap: "8px", fontWeight: "600", fontSize: "14px", color: "var(--dsw-alias-label-primary, #fff)" },
+                    jsx("div", {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "6px",
+                        background: "rgba(59, 130, 246, 0.15)",
+                        color: "#60a5fa",
+                        flexShrink: 0
+                      },
+                      children: jsx(LockIcon, {})
+                    }),
+                    jsxs("div", {
+                      style: { display: "flex", flexDirection: "column", gap: "3px" },
                       children: [
-                        jsx(LockIcon, {}),
-                        t("title")
+                        jsx("span", {
+                          style: { fontWeight: "600", fontSize: "14px", color: "var(--dsw-alias-label-primary, #fff)" },
+                          children: t("title")
+                        }),
+                        jsx("span", {
+                          style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #aaa)" },
+                          children: t("description")
+                        })
+                      ]
+                    })
+                  ]
+                }),
+                jsxs("div", {
+                  style: { display: "flex", alignItems: "center", gap: "10px" },
+                  children: [
+                    dirty ? jsx("span", {
+                      style: {
+                        fontSize: "11px",
+                        background: "rgba(255, 170, 0, 0.2)",
+                        color: "#ffaa00",
+                        padding: "2px 6px",
+                        borderRadius: "4px"
+                      },
+                      children: t("unsaved")
+                    }) : null,
+                    jsxs("span", {
+                      style: {
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "2px 9px",
+                        borderRadius: "9999px",
+                        background: "rgba(16, 185, 129, 0.12)",
+                        color: "#10b981",
+                        border: "1px solid rgba(16, 185, 129, 0.25)",
+                        fontSize: "11px",
+                        fontWeight: "500",
+                        whiteSpace: "nowrap"
+                      },
+                      children: [
+                        jsx("span", { style: { width: "5px", height: "5px", borderRadius: "50%", background: "#10b981" } }),
+                        t("activeStatus", "已启用")
                       ]
                     }),
+                    jsx(IconChevronDownOutline14, {
+                      style: {
+                        transform: open ? "rotate(180deg)" : "rotate(0deg)",
+                        transition: "transform 0.2s",
+                        color: "var(--dsw-alias-label-secondary, #aaa)"
+                      }
+                    })
+                  ]
+                })
+              ]
+            }),
                     jsx("span", {
                       style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #aaa)" },
                       children: t("description")
