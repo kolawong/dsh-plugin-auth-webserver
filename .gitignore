@@ -2,3 +2,11 @@ node_modules/
 .DS_Store
 dist/
 *.log
+
+# verification artifacts
+.verify-pack/
+.verify-home/
+.verify-store/
+
+# j-space session ledger
+.jspace/

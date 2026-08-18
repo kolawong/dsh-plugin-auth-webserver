@@ -1,17 +1,89 @@
+/**
+ * dsh-plugin-auth-webserver — client half (the Web UI settings card).
+ *
+ * Registers the auth card into the Plugins settings section through the
+ * `settings.plugin.item` slot, with bilingual copy installed through the
+ * client locale service (`ctx.locale.register`) and the slot's `locale:`
+ * seat synthesizing the `t` prop. Icons come from
+ * `@deepseek-ai/dsh-client-ui-primitives` plus one inline SVG lock mark.
+ *
+ * The handoff id must equal the loader entry name (the package name), which
+ * is also the graph row id served at /plugins/<id>/client.js.
+ */
+
 window.__ModuleLoader__.load({
-  id: "@custom/dsh-plugin-auth-webserver",
+  id: "dsh-plugin-auth-webserver",
   factory: (require) => {
     const exports = {};
     const React = require("react");
     const { useState, useEffect } = React;
     const { jsxs, jsx } = require("react/jsx-runtime");
-    const { IconChevronDownOutline14 } = require("@deepseek-ai/dsh-client-ui-primitives");
+    const { IconChevronDownOutline14, IconCheckOutline16, IconWarningOutline16 } = require("@deepseek-ai/dsh-client-ui-primitives");
 
-    function AuthCard() {
+    /** Locale namespace owning this card's copy. */
+    const NS = "settings.plugin.auth-webserver";
+
+    const zh = {
+      title: "Web 访问认证",
+      description: "配置登录凭据、密码保护与登录会话",
+      usernameLabel: "登录用户名",
+      passwordLabel: "登录密码",
+      passwordPlaceholder: "留空则关闭密码保护",
+      passwordHint: "修改后立即生效；未登录用户访问 Web 界面时会看到登录页面。",
+      show: "显示",
+      hide: "隐藏",
+      unsaved: "未保存",
+      logout: "退出登录",
+      logoutConfirm: "确定要退出当前登录吗？",
+      discard: "放弃更改",
+      save: "保存设置",
+      saving: "保存中…",
+      saveSuccess: "账号密码已更新并立即生效。",
+      saveFailed: "保存失败：{message}",
+      requestFailed: "请求失败：{message}",
+    };
+
+    const en = {
+      title: "Web authentication",
+      description: "Configure the login credentials, password protection, and session state",
+      usernameLabel: "Username",
+      passwordLabel: "Password",
+      passwordPlaceholder: "Leave blank to disable password protection",
+      passwordHint: "Changes apply immediately; unauthenticated visitors see the login page.",
+      show: "Show",
+      hide: "Hide",
+      unsaved: "Unsaved",
+      logout: "Sign out",
+      logoutConfirm: "Sign out of the current session?",
+      discard: "Discard",
+      save: "Save settings",
+      saving: "Saving…",
+      saveSuccess: "Credentials updated and applied immediately.",
+      saveFailed: "Save failed: {message}",
+      requestFailed: "Request failed: {message}",
+    };
+
+    /** Inline lock mark for the card header (kept local: no emoji, no extra deps). */
+    function LockIcon(props) {
+      return jsx("svg", {
+        fill: "none",
+        viewBox: "0 0 24 24",
+        stroke: "currentColor",
+        "aria-hidden": true,
+        style: { width: 16, height: 16, flexShrink: 0, color: "#60a5fa", ...props.style },
+        children: jsx("path", {
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          strokeWidth: 2,
+          d: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z",
+        }),
+      });
+    }
+
+    function AuthCard({ t }) {
       const [open, setOpen] = useState(false);
       const [username, setUsername] = useState("");
       const [password, setPassword] = useState("");
-      const [realm, setRealm] = useState("");
       const [showPassword, setShowPassword] = useState(false);
       const [dirty, setDirty] = useState(false);
       const [saving, setSaving] = useState(false);
@@ -24,7 +96,6 @@ window.__ModuleLoader__.load({
             if (data && data.ok) {
               setUsername(data.username || "");
               setPassword(data.password || "");
-              setRealm(data.realm || "DeepSeek Harness Authentication");
               setDirty(false);
             }
           })
@@ -41,21 +112,21 @@ window.__ModuleLoader__.load({
         fetch("/api/auth.update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, realm })
+          body: JSON.stringify({ username, password })
         })
           .then(r => r.json())
           .then(data => {
             setSaving(false);
             if (data && data.ok) {
               setDirty(false);
-              setMsg({ type: "success", text: "✅ 账号密码已更新并立即生效！" });
+              setMsg({ type: "success", text: t("saveSuccess") });
             } else {
-              setMsg({ type: "error", text: "❌ 保存失败: " + (data && data.error ? data.error : "未知错误") });
+              setMsg({ type: "error", text: t("saveFailed", { message: data && data.error ? data.error : "?" }) });
             }
           })
           .catch(err => {
             setSaving(false);
-            setMsg({ type: "error", text: "❌ 请求失败: " + err.message });
+            setMsg({ type: "error", text: t("requestFailed", { message: err.message }) });
           });
       };
 
@@ -65,7 +136,7 @@ window.__ModuleLoader__.load({
       };
 
       const handleLogout = () => {
-        if (confirm("确定要退出当前登录吗？")) {
+        if (confirm(t("logoutConfirm"))) {
           fetch("/api/auth.logout", { method: "POST" })
             .then(() => {
               window.location.reload();
@@ -106,13 +177,16 @@ window.__ModuleLoader__.load({
                 jsxs("div", {
                   style: { display: "flex", flexDirection: "column", gap: "4px" },
                   children: [
-                    jsx("span", {
-                      style: { fontWeight: "600", fontSize: "14px", color: "var(--dsw-alias-label-primary, #fff)" },
-                      children: "🔒 Web 访问密码认证 (Web Authentication)"
+                    jsxs("span", {
+                      style: { display: "flex", alignItems: "center", gap: "8px", fontWeight: "600", fontSize: "14px", color: "var(--dsw-alias-label-primary, #fff)" },
+                      children: [
+                        jsx(LockIcon, {}),
+                        t("title")
+                      ]
                     }),
                     jsx("span", {
                       style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #aaa)" },
-                      children: "配置远程访问、Web 登录界面密码与会话状态"
+                      children: t("description")
                     })
                   ]
                 }),
@@ -127,7 +201,7 @@ window.__ModuleLoader__.load({
                         padding: "2px 6px",
                         borderRadius: "4px"
                       },
-                      children: "未保存"
+                      children: t("unsaved")
                     }) : null,
                     jsx(IconChevronDownOutline14, {
                       style: {
@@ -154,7 +228,7 @@ window.__ModuleLoader__.load({
                   children: [
                     jsx("label", {
                       style: { fontSize: "13px", fontWeight: "500", color: "var(--dsw-alias-label-primary, #eee)" },
-                      children: "登录用户名 (Username)"
+                      children: t("usernameLabel")
                     }),
                     jsx("input", {
                       type: "text",
@@ -177,7 +251,7 @@ window.__ModuleLoader__.load({
                   children: [
                     jsx("label", {
                       style: { fontSize: "13px", fontWeight: "500", color: "var(--dsw-alias-label-primary, #eee)" },
-                      children: "登录密码 (Password)"
+                      children: t("passwordLabel")
                     }),
                     jsxs("div", {
                       style: { display: "flex", gap: "8px" },
@@ -186,7 +260,7 @@ window.__ModuleLoader__.load({
                           type: showPassword ? "text" : "password",
                           value: password,
                           onChange: (e) => { setPassword(e.target.value); setDirty(true); },
-                          placeholder: "留空则关闭密码保护",
+                          placeholder: t("passwordPlaceholder"),
                           style: {
                             flex: 1,
                             height: "36px",
@@ -210,13 +284,13 @@ window.__ModuleLoader__.load({
                             cursor: "pointer",
                             fontSize: "12px"
                           },
-                          children: showPassword ? "隐藏" : "显示"
+                          children: showPassword ? t("hide") : t("show")
                         })
                       ]
                     }),
                     jsx("span", {
                       style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, #888)" },
-                      children: "提示：修改密码后自动生效，未登录的用户在访问 Web 界面时将看到 DeepSeek 风格的登录页面。"
+                      children: t("passwordHint")
                     })
                   ]
                 }),
@@ -225,10 +299,18 @@ window.__ModuleLoader__.load({
                     padding: "8px 12px",
                     borderRadius: "6px",
                     fontSize: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
                     background: msg.type === "success" ? "rgba(0, 200, 80, 0.15)" : "rgba(255, 60, 60, 0.15)",
                     color: msg.type === "success" ? "#00e676" : "#ff5252"
                   },
-                  children: msg.text
+                  children: [
+                    msg.type === "success"
+                      ? jsx(IconCheckOutline16, { size: 16 })
+                      : jsx(IconWarningOutline16, { size: 16 }),
+                    jsx("span", { children: msg.text })
+                  ]
                 }) : null,
                 jsxs("div", {
                   style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" },
@@ -245,7 +327,7 @@ window.__ModuleLoader__.load({
                         cursor: "pointer",
                         fontSize: "13px"
                       },
-                      children: "退出登录"
+                      children: t("logout")
                     }),
                     jsxs("div", {
                       style: { display: "flex", gap: "10px" },
@@ -264,7 +346,7 @@ window.__ModuleLoader__.load({
                             opacity: dirty && !saving ? 1 : 0.5,
                             fontSize: "13px"
                           },
-                          children: "放弃更改"
+                          children: t("discard")
                         }),
                         jsx("button", {
                           type: "button",
@@ -281,7 +363,7 @@ window.__ModuleLoader__.load({
                             opacity: dirty && !saving ? 1 : 0.5,
                             fontSize: "13px"
                           },
-                          children: saving ? "保存中..." : "保存设置"
+                          children: saving ? t("saving") : t("save")
                         })
                       ]
                     })
@@ -294,15 +376,19 @@ window.__ModuleLoader__.load({
       });
     }
 
-    exports.apply = function(ctx) {
-      ctx.inject(["slots"], (sctx) => {
-        sctx.slots.inject("settings.plugin.item", function* () {
-          yield sctx.slots.register({
-            name: "settings.plugin.item",
-            id: "auth-webserver",
-            order: -1
-          }, AuthCard);
-        });
+    exports.inject = ["locale", "slots"];
+
+    exports.apply = function (ctx) {
+      // Bilingual dictionaries, registered before the slot so the renderer's
+      // `t` seat can resolve them once the card mounts.
+      ctx.locale.register(NS, { zh, en });
+      ctx.slots.inject("settings.plugin.item", function* () {
+        yield ctx.slots.register({
+          name: "settings.plugin.item",
+          id: "auth-webserver",
+          order: -1,
+          locale: NS
+        }, AuthCard);
       });
     };
 

@@ -1,24 +1,126 @@
 /**
  * dsh-plugin-auth-webserver
- * 
- * DeepSeek Harness Cordis plugin providing:
- * 1. Modern DeepSeek-themed Web Login Page (Form & Cookie-based session auth)
- * 2. Fallback HTTP Basic Auth support for CLI / API clients
- * 3. WebSocket Upgrade token verification
- * 4. Automatic crypto.randomUUID polyfill for non-HTTPS / raw IP web clients
- * 5. Remote IP privileged RPC gateway trust delegation
- * 6. Interactive Web UI Settings Card integration & live auth update/logout API
+ *
+ * DeepSeek Harness Cordis plugin providing an auth-gated replacement for the
+ * stock web transport (`@deepseek-ai/dsh-host-webserver`):
+ * 1. A bilingual DeepSeek-themed web login page with HMAC cookie sessions
+ * 2. Fallback HTTP Basic Auth for CLI / API clients
+ * 3. WebSocket upgrade token verification
+ * 4. crypto.randomUUID polyfill for non-HTTPS / raw-IP web clients
+ * 5. Remote-IP Host/Origin normalization for privileged RPC endpoints
+ * 6. Auth settings APIs consumed by the Web UI settings card
+ *
+ * Installed as a `dsh.bundle`: the shipped cordis.patch.yml disables the
+ * in-box `webserver` row and inserts this plugin as `webserver-auth`. It
+ * provides the same `webServer` service and registration API as the stock
+ * server, so route owners (frontend dist, client modules, ...) compose
+ * unchanged. Runtime credential updates persist to a plugin-owned state file
+ * under `$DSH_HOME/plugins/dsh-plugin-auth-webserver/state.json` — never into
+ * the user's cordis.patch.yml.
  *
  * @license MIT
  */
 
 import { createServer } from "node:http";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
 
 const COOKIE_NAME = "dsh_auth_token";
+/** Session lifetime: 30 days, in seconds (cookie) and milliseconds (verify). */
+const TOKEN_MAX_AGE_SECONDS = 30 * 24 * 3600;
+const TOKEN_MAX_AGE_MS = TOKEN_MAX_AGE_SECONDS * 1000;
+/** Plugin-owned state directory under the DeepSeek Harness home. */
+const STATE_DIR_SEGMENTS = ["plugins", "dsh-plugin-auth-webserver"];
+
+export const name = "auth-webserver";
+
+/**
+ * Resolve the DeepSeek Harness home with the same precedence the harness
+ * itself uses: `$DSH_HOME` (a blank value counts as unset), else `~/.dsh`.
+ * @returns the normalized absolute home path.
+ */
+function resolveAuthHome() {
+  const env = process.env.DSH_HOME;
+  if (env !== undefined && env.trim().length > 0) {
+    const path = env.trim();
+    if (path === "~") return homedir();
+    if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
+    return resolve(path);
+  }
+  return join(homedir(), ".dsh");
+}
+
+function stateDir() {
+  return join(resolveAuthHome(), ...STATE_DIR_SEGMENTS);
+}
+
+/** Server-side copy, per language. */
+const MESSAGES = {
+  zh: {
+    methodNotAllowed: "方法不允许",
+    badCredentials: "用户名或密码错误",
+    authRequired: "需要身份验证",
+  },
+  en: {
+    methodNotAllowed: "Method not allowed",
+    badCredentials: "Invalid username or password",
+    authRequired: "Authentication required",
+  },
+};
+
+/**
+ * Pick the request language: an explicit `?lang=` wins, then the
+ * Accept-Language header. Unmatched or absent preferences fall back to
+ * Simplified Chinese (the harness's own fallback locale).
+ */
+function pickLang(req) {
+  const query = new URL(req.url ?? "/", "http://x").searchParams.get("lang");
+  if (query === "zh" || query === "en") return query;
+  const accept = (req.headers["accept-language"] ?? "").trim().toLowerCase();
+  if (accept.startsWith("zh")) return "zh";
+  if (accept.startsWith("en")) return "en";
+  return "zh";
+}
+
+function msg(lang, key) {
+  return (MESSAGES[lang] ?? MESSAGES.zh)[key] ?? key;
+}
+
+/** Login page copy, per language. */
+const LOGIN_COPY = {
+  zh: {
+    lang: "zh-CN",
+    subtitle: "远程安全访问认证 · Web Authentication",
+    usernameLabel: "用户名",
+    usernamePlaceholder: "请输入用户名",
+    passwordLabel: "访问密码",
+    passwordPlaceholder: "请输入访问密码",
+    toggleTitle: "显示/隐藏密码",
+    errorMsg: "用户名或密码错误",
+    submit: "登 录",
+    verifying: "正在验证...",
+    success: "登录成功，正在进入...",
+    networkError: "网络请求失败，请稍后重试",
+  },
+  en: {
+    lang: "en",
+    subtitle: "Secure remote access · Web Authentication",
+    usernameLabel: "Username",
+    usernamePlaceholder: "Enter username",
+    passwordLabel: "Password",
+    passwordPlaceholder: "Enter password",
+    toggleTitle: "Show/hide password",
+    errorMsg: "Invalid username or password",
+    submit: "Sign in",
+    verifying: "Verifying...",
+    success: "Signed in, entering...",
+    networkError: "Network error, please try again",
+  },
+};
 
 export class AuthWebServer extends Service {
   config;
@@ -27,7 +129,7 @@ export class AuthWebServer extends Service {
     port: z.natural().max(65535).default(3080),
     username: z.string().default("admin"),
     password: z.string().default(""),
-    realm: z.string().default("DeepSeek Harness Authentication")
+    realm: z.string().default("DeepSeek Harness Authentication"),
   });
 
   exact = new Map();
@@ -43,6 +145,7 @@ export class AuthWebServer extends Service {
   constructor(ctx, config) {
     super(ctx, "webServer");
     this.config = config;
+    this.loadState();
     this.initSecret();
 
     // Register Auth Settings & Login APIs
@@ -50,9 +153,10 @@ export class AuthWebServer extends Service {
       kind: "exact",
       path: "/api/auth.login",
       handler: async (req, res) => {
+        const lang = pickLang(req);
         if (req.method !== "POST") {
-          res.writeHead(405, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+          res.writeHead(405, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: msg(lang, "methodNotAllowed") }));
           return;
         }
         let body = "";
@@ -65,22 +169,21 @@ export class AuthWebServer extends Service {
 
             if (!expectedPass || (data.username === expectedUser && data.password === expectedPass)) {
               const token = this.generateToken(expectedUser, expectedPass);
-              const maxAge = 30 * 24 * 3600; // 30 days
               res.writeHead(200, {
-                "Content-Type": "application/json",
-                "Set-Cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+                "Content-Type": "application/json; charset=utf-8",
+                "Set-Cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TOKEN_MAX_AGE_SECONDS}`,
               });
               res.end(JSON.stringify({ ok: true, username: expectedUser }));
             } else {
-              res.writeHead(401, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ ok: false, error: "用户名或密码错误" }));
+              res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify({ ok: false, error: msg(lang, "badCredentials") }));
             }
           } catch (err) {
-            res.writeHead(400, { "Content-Type": "application/json" });
+            res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: false, error: err.message }));
           }
         });
-      }
+      },
     });
 
     this.register({
@@ -88,34 +191,35 @@ export class AuthWebServer extends Service {
       path: "/api/auth.logout",
       handler: async (req, res) => {
         res.writeHead(200, {
-          "Content-Type": "application/json",
-          "Set-Cookie": `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+          "Content-Type": "application/json; charset=utf-8",
+          "Set-Cookie": `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
         });
         res.end(JSON.stringify({ ok: true }));
-      }
+      },
     });
 
     this.register({
       kind: "exact",
       path: "/api/auth.get",
       handler: async (req, res) => {
-        res.writeHead(200, { "Content-Type": "application/json" });
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({
           ok: true,
           username: this.config.username || "admin",
           password: this.config.password || "",
-          realm: this.config.realm || "DeepSeek Harness Authentication"
+          realm: this.config.realm || "DeepSeek Harness Authentication",
         }));
-      }
+      },
     });
 
     this.register({
       kind: "exact",
       path: "/api/auth.update",
       handler: async (req, res) => {
+        const lang = pickLang(req);
         if (req.method !== "POST") {
-          res.writeHead(405);
-          res.end();
+          res.writeHead(405, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: msg(lang, "methodNotAllowed") }));
           return;
         }
         let body = "";
@@ -127,40 +231,77 @@ export class AuthWebServer extends Service {
             if (data.password !== undefined) this.config.password = String(data.password);
             if (data.realm !== undefined) this.config.realm = String(data.realm);
 
-            // Persist to cordis.patch.yml
-            this.persistPatch();
+            // Persist to the plugin-owned state file under $DSH_HOME.
+            this.saveState();
 
-            // Also refresh cookie for the current admin
+            // Also refresh the cookie for the current admin session.
             const token = this.generateToken(this.config.username, this.config.password);
-            const maxAge = 30 * 24 * 3600;
             res.writeHead(200, {
-              "Content-Type": "application/json",
-              "Set-Cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+              "Content-Type": "application/json; charset=utf-8",
+              "Set-Cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TOKEN_MAX_AGE_SECONDS}`,
             });
             res.end(JSON.stringify({
               ok: true,
               username: this.config.username,
-              realm: this.config.realm
+              realm: this.config.realm,
             }));
           } catch (err) {
-            res.writeHead(400, { "Content-Type": "application/json" });
+            res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: false, error: err.message }));
           }
         });
-      }
+      },
     });
+  }
+
+  /**
+   * Apply persisted runtime updates (the settings card) on top of the row
+   * config. Environment overrides (DSH_AUTH_USER / DSH_AUTH_PASS) still win at
+   * request time and are never written here.
+   */
+  loadState() {
+    let state;
+    try {
+      const raw = readFileSync(join(stateDir(), "state.json"), "utf8");
+      state = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (state === null || typeof state !== "object") return;
+    if (typeof state.username === "string") this.config.username = state.username;
+    if (typeof state.password === "string") this.config.password = state.password;
+    if (typeof state.realm === "string") this.config.realm = state.realm;
+  }
+
+  /** Persist the credential overrides made through the settings card. */
+  saveState() {
+    try {
+      const dir = stateDir();
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "state.json"), JSON.stringify({
+        username: this.config.username ?? "admin",
+        password: this.config.password ?? "",
+        realm: this.config.realm ?? "DeepSeek Harness Authentication",
+      }, null, 2), { encoding: "utf8", mode: 0o600 });
+    } catch (e) {
+      this.ctx.logger.warn("Failed to persist auth state:", e);
+    }
   }
 
   initSecret() {
     try {
-      const secretFile = "/root/.dsh/plugins/dsh-plugin-auth-webserver/.secret";
+      const dir = stateDir();
+      const secretFile = join(dir, ".secret");
       if (existsSync(secretFile)) {
         this.secret = readFileSync(secretFile, "utf8").trim();
       } else {
         this.secret = randomBytes(32).toString("hex");
-        writeFileSync(secretFile, this.secret, "utf8");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(secretFile, this.secret, { encoding: "utf8", mode: 0o600 });
       }
     } catch {
+      // Ephemeral secret: sessions do not survive a restart, but the server
+      // still boots wherever the home is not writable.
       this.secret = randomBytes(32).toString("hex");
     }
   }
@@ -177,7 +318,7 @@ export class AuthWebServer extends Service {
     if (parts.length !== 2) return false;
     const [tsStr, sig] = parts;
     const ts = parseInt(tsStr, 10);
-    if (isNaN(ts) || Date.now() - ts > 30 * 24 * 3600 * 1000 || ts > Date.now() + 60000) {
+    if (isNaN(ts) || Date.now() - ts > TOKEN_MAX_AGE_MS || ts > Date.now() + 60000) {
       return false;
     }
     const expectedSig = createHmac("sha256", this.secret).update(`${expectedUser}:${expectedPass}:${ts}`).digest("hex");
@@ -185,31 +326,6 @@ export class AuthWebServer extends Service {
       return timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expectedSig, "hex"));
     } catch {
       return false;
-    }
-  }
-
-  persistPatch() {
-    try {
-      const patchPath = "/root/.dsh/profiles/web/cordis.patch.yml";
-      const u = (this.config.username || "admin").replace(/'/g, "''");
-      const p = (this.config.password || "").replace(/'/g, "''");
-      const content = `- id: webserver
-  disabled: true
-
-- insert:
-    - id: webserver-auth
-      name: '@custom/dsh-plugin-auth-webserver'
-      inject:
-        - webStartup
-      config:
-        host: '0.0.0.0'
-        port: !!js ctx.webStartup.port ?? 3080
-        username: '${u}'
-        password: '${p}'
-`;
-      writeFileSync(patchPath, content, "utf8");
-    } catch (e) {
-      this.ctx.logger.warn("Failed to persist cordis.patch.yml:", e);
     }
   }
 
@@ -283,13 +399,13 @@ export class AuthWebServer extends Service {
       return true;
     }
 
-    // 1. Check Cookie
+    // 1. Cookie session
     const cookies = this.parseCookies(req);
     if (cookies[COOKIE_NAME] && this.verifyToken(cookies[COOKIE_NAME], expectedUser, expectedPass)) {
       return true;
     }
 
-    // 2. Check HTTP Basic Authorization header (backward compatible for API/CLI)
+    // 2. HTTP Basic Authorization header (for CLI / API clients)
     const auth = req.headers["authorization"];
     if (auth && auth.startsWith("Basic ")) {
       try {
@@ -319,13 +435,14 @@ export class AuthWebServer extends Service {
     }
   }
 
-  renderLoginPage(req, res) {
+  renderLoginPage(res, lang) {
+    const copy = LOGIN_COPY[lang] ?? LOGIN_COPY.zh;
     const html = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${copy.lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>DeepSeek Harness - 访问登录</title>
+  <title>DeepSeek Harness - ${copy.subtitle}</title>
   <style>
     :root {
       --bg-base: #0a0d14;
@@ -347,7 +464,7 @@ export class AuthWebServer extends Service {
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       background-color: var(--bg-base);
-      background-image: 
+      background-image:
         radial-gradient(circle at 50% 12%, rgba(77, 107, 254, 0.22) 0%, transparent 60%),
         radial-gradient(circle at 85% 85%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
         radial-gradient(circle at 15% 75%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
@@ -361,7 +478,7 @@ export class AuthWebServer extends Service {
     .background-grid {
       position: fixed;
       inset: 0;
-      background-image: 
+      background-image:
         linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
       background-size: 36px 36px;
@@ -380,7 +497,7 @@ export class AuthWebServer extends Service {
       border: 1px solid var(--border-card);
       border-radius: 20px;
       padding: 38px 32px;
-      box-shadow: 
+      box-shadow:
         0 24px 60px rgba(0, 0, 0, 0.6),
         0 0 50px rgba(77, 107, 254, 0.12);
       animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -570,21 +687,21 @@ export class AuthWebServer extends Service {
         </svg>
       </div>
       <h1 class="title">DeepSeek Harness</h1>
-      <p class="subtitle">远程安全访问认证 · Web Authentication</p>
+      <p class="subtitle">${copy.subtitle}</p>
     </div>
 
     <div id="errorBox" class="error-box">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
-      <span id="errorMsg">用户名或密码错误</span>
+      <span id="errorMsg">${copy.errorMsg}</span>
     </div>
 
     <form id="loginForm" onsubmit="return handleLogin(event)">
       <div class="form-group">
-        <label class="form-label" for="username">用户名</label>
+        <label class="form-label" for="username">${copy.usernameLabel}</label>
         <div class="input-wrapper">
-          <input type="text" id="username" class="form-input" placeholder="请输入用户名" required autofocus autocomplete="username">
+          <input type="text" id="username" class="form-input" placeholder="${copy.usernamePlaceholder}" required autofocus autocomplete="username">
           <svg class="input-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
           </svg>
@@ -592,13 +709,13 @@ export class AuthWebServer extends Service {
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="password">访问密码</label>
+        <label class="form-label" for="password">${copy.passwordLabel}</label>
         <div class="input-wrapper">
-          <input type="password" id="password" class="form-input" placeholder="请输入访问密码" required autocomplete="current-password">
+          <input type="password" id="password" class="form-input" placeholder="${copy.passwordPlaceholder}" required autocomplete="current-password">
           <svg class="input-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
           </svg>
-          <button type="button" class="toggle-password" id="togglePassword" onclick="togglePasswordVisibility()" title="显示/隐藏密码">
+          <button type="button" class="toggle-password" id="togglePassword" onclick="togglePasswordVisibility()" title="${copy.toggleTitle}">
             <svg id="eyeIcon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
@@ -609,7 +726,7 @@ export class AuthWebServer extends Service {
 
       <button type="submit" id="submitBtn" class="submit-btn">
         <span class="spinner" id="spinner"></span>
-        <span id="btnText">登 录</span>
+        <span id="btnText">${copy.submit}</span>
       </button>
     </form>
 
@@ -644,7 +761,7 @@ export class AuthWebServer extends Service {
       errorBox.style.display = "none";
       submitBtn.disabled = true;
       spinner.style.display = "inline-block";
-      btnText.textContent = "正在验证...";
+      btnText.textContent = "${copy.verifying}";
 
       try {
         const res = await fetch("/api/auth.login", {
@@ -654,23 +771,23 @@ export class AuthWebServer extends Service {
         });
         const data = await res.json();
         if (data.ok) {
-          btnText.textContent = "登录成功，正在进入...";
+          btnText.textContent = "${copy.success}";
           setTimeout(() => {
             window.location.reload();
           }, 300);
         } else {
           submitBtn.disabled = false;
           spinner.style.display = "none";
-          btnText.textContent = "登 录";
-          errorMsg.textContent = data.error || "用户名或密码错误";
+          btnText.textContent = "${copy.submit}";
+          errorMsg.textContent = data.error || "${copy.errorMsg}";
           errorBox.style.display = "flex";
           document.getElementById("password").focus();
         }
       } catch (err) {
         submitBtn.disabled = false;
         spinner.style.display = "none";
-        btnText.textContent = "登 录";
-        errorMsg.textContent = "网络请求失败，请稍后重试";
+        btnText.textContent = "${copy.submit}";
+        errorMsg.textContent = "${copy.networkError}";
         errorBox.style.display = "flex";
       }
       return false;
@@ -681,7 +798,7 @@ export class AuthWebServer extends Service {
 
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
     });
     res.end(html);
   }
@@ -690,7 +807,7 @@ export class AuthWebServer extends Service {
     const handle = async (req, res) => {
       const rawPath = new URL(req.url ?? "/", "http://x").pathname;
 
-      // Allow public auth endpoints unconditionally
+      // The login endpoint is public by design; everything else is gated.
       if (rawPath === "/api/auth.login") {
         const route = this.exact.get("/api/auth.login");
         if (route) {
@@ -700,18 +817,19 @@ export class AuthWebServer extends Service {
       }
 
       if (!this.checkAuth(req)) {
-        // If it is an HTML navigation request (browser viewing the page), render the custom Login Page!
         const accept = req.headers.accept || "";
         const isHtmlRequest = rawPath === "/" || rawPath === "/index.html" || accept.includes("text/html");
 
+        // Browsers get the themed login page instead of a native popup.
         if (isHtmlRequest && req.method === "GET") {
-          this.renderLoginPage(req, res);
+          this.renderLoginPage(res, pickLang(req));
           return;
         }
 
-        // For non-HTML / API requests, return 401 JSON without WWW-Authenticate header
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Authentication required" }));
+        // API / CLI clients get a JSON 401. No WWW-Authenticate header, so
+        // browsers never fall back to their native credential dialog.
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: false, error: msg(pickLang(req), "authRequired") }));
         return;
       }
 

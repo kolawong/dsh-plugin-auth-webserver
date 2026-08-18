@@ -1,0 +1,21 @@
+# The dsh-plugin-auth-webserver bundle patch, applied after dsh-base and
+# dsh-web-app when a profile lists this bundle. It replaces the stock web
+# transport with the auth-gated server: the in-box `webserver` row is
+# disabled by id and this row provides the same `webServer` service plus
+# authentication.
+#
+# Later layers still win per row (the profile's own cordis.patch.yml, the
+# home-level patch, --patch overlays), so credentials and host/port overrides
+# belong there — never in this file.
+
+- id: webserver
+  disabled: true
+
+- insert:
+    - id: webserver-auth
+      name: 'dsh-plugin-auth-webserver'
+      inject:
+        - webStartup
+      config:
+        host: !!js ctx.webStartup.host ?? '0.0.0.0'
+        port: !!js ctx.webStartup.port ?? 3080

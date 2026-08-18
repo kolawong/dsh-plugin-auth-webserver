@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-auth-webserver",
-  "version": "0.2.0",
-  "description": "DeepSeek Harness plugin providing HTTP Basic Authentication, Web UI Settings Card, remote IP access, and Web Cryptography UUID polyfill for self-hosted server deployments.",
+  "version": "0.3.0",
+  "description": "DeepSeek Harness bundle providing HTTP Basic Authentication, a bilingual web login page, a Web UI settings card, remote IP access, and a Web Cryptography UUID polyfill for self-hosted server deployments.",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
@@ -14,9 +14,15 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-ui-settings-plugins"
+        "@deepseek-ai/dsh-client-ui-settings-plugins",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-primitives"
       ],
       "platform": "web"
     }
@@ -41,11 +47,14 @@
     "index.js",
     "client.js",
     "index.d.ts",
+    "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "README_CN.md",
+    "LICENSE",
+    "assets/hero.png"
   ],
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^ || >=0.1.0",
-    "@deepseek-ai/schemastery": "workspace:^ || >=0.1.0"
+    "@deepseek-ai/cordis": ">=4.0.0",
+    "@deepseek-ai/schemastery": ">=3.0.0"
   }
 }
