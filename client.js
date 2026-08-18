@@ -385,6 +385,7 @@ window.__ModuleLoader__.load({
       ctx.slots.inject("settings.plugin.item", function* () {
         yield ctx.slots.register({
           name: "settings.plugin.item",
+          key: "auth-webserver",
           id: "auth-webserver",
           order: -1,
           locale: NS
