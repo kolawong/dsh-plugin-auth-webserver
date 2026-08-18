@@ -24,6 +24,9 @@ window.__ModuleLoader__.load({
     const NS = "settings.plugin.auth-webserver";
 
     const zh = {
+      activeStatus: "已启用",
+      protectedStatus: "密码保护中",
+      unprotectedStatus: "无密码保护",
       title: "Web 访问认证",
       description: "配置登录凭据、密码保护与登录会话",
       usernameLabel: "登录用户名",
@@ -44,6 +47,9 @@ window.__ModuleLoader__.load({
     };
 
     const en = {
+      activeStatus: "Enabled",
+      protectedStatus: "Protected",
+      unprotectedStatus: "No Password",
       title: "Web authentication",
       description: "Configure the login credentials, password protection, and session state",
       usernameLabel: "Username",
@@ -163,7 +169,7 @@ window.__ModuleLoader__.load({
               onClick: () => setOpen(!open),
               style: {
                 width: "100%",
-                padding: "14px 16px",
+                padding: "12px 16px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -171,43 +177,42 @@ window.__ModuleLoader__.load({
                 border: "none",
                 color: "inherit",
                 cursor: "pointer",
-                textAlign: "left"
+                textAlign: "left",
+                gap: "12px",
               },
               children: [
+                // Left Title & Description
                 jsxs("div", {
-                  style: { display: "flex", alignItems: "center", gap: "12px" },
+                  style: { display: "flex", flexDirection: "column", gap: "3px", minWidth: 0 },
                   children: [
-                    jsx("div", {
+                    jsxs("span", {
                       style: {
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "center",
-                        width: "32px",
-                        height: "32px",
-                        borderRadius: "6px",
-                        background: "rgba(59, 130, 246, 0.15)",
-                        color: "#60a5fa",
-                        flexShrink: 0
+                        gap: "8px",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        color: "var(--dsw-alias-label-primary, #fff)",
+                        whiteSpace: "nowrap",
                       },
-                      children: jsx(LockIcon, {})
+                      children: [jsx(LockIcon, {}), t("title")],
                     }),
-                    jsxs("div", {
-                      style: { display: "flex", flexDirection: "column", gap: "3px" },
-                      children: [
-                        jsx("span", {
-                          style: { fontWeight: "600", fontSize: "14px", color: "var(--dsw-alias-label-primary, #fff)" },
-                          children: t("title")
-                        }),
-                        jsx("span", {
-                          style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #aaa)" },
-                          children: t("description")
-                        })
-                      ]
-                    })
-                  ]
+                    jsx("span", {
+                      style: {
+                        fontSize: "12px",
+                        color: "var(--dsw-alias-label-secondary, #aaa)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      },
+                      children: t("description"),
+                    }),
+                  ],
                 }),
+
+                // Right Status Badge & Arrow
                 jsxs("div", {
-                  style: { display: "flex", alignItems: "center", gap: "10px" },
+                  style: { display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 },
                   children: [
                     dirty ? jsx("span", {
                       style: {
@@ -221,32 +226,39 @@ window.__ModuleLoader__.load({
                     }) : null,
                     jsxs("span", {
                       style: {
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                        fontSize: "11px",
+                        fontWeight: "500",
+                        background: password ? "rgba(16, 185, 129, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                        color: password ? "#10b981" : "#60a5fa",
+                        border: password ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(59, 130, 246, 0.3)",
                         display: "inline-flex",
                         alignItems: "center",
                         gap: "5px",
-                        padding: "2px 9px",
-                        borderRadius: "9999px",
-                        background: "rgba(16, 185, 129, 0.12)",
-                        color: "#10b981",
-                        border: "1px solid rgba(16, 185, 129, 0.25)",
-                        fontSize: "11px",
-                        fontWeight: "500",
-                        whiteSpace: "nowrap"
+                        whiteSpace: "nowrap",
                       },
                       children: [
-                        jsx("span", { style: { width: "5px", height: "5px", borderRadius: "50%", background: "#10b981" } }),
-                        t("activeStatus", "已启用")
-                      ]
+                        jsx("span", {
+                          style: {
+                            width: "6px",
+                            height: "6px",
+                            borderRadius: "50%",
+                            background: password ? "#10b981" : "#60a5fa",
+                          },
+                        }),
+                        password ? t("protectedStatus", "密码保护中") : t("activeStatus", "已启用"),
+                      ],
                     }),
                     jsx(IconChevronDownOutline14, {
                       style: {
                         transform: open ? "rotate(180deg)" : "rotate(0deg)",
                         transition: "transform 0.2s",
-                        color: "var(--dsw-alias-label-secondary, #aaa)"
-                      }
-                    })
-                  ]
-                })
+                        color: "var(--dsw-alias-label-secondary, #aaa)",
+                      },
+                    }),
+                  ],
+                }),
               ]
             }),
             open ? jsxs("div", {
