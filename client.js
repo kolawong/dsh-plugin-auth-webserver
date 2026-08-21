@@ -2,13 +2,7 @@
  * dsh-plugin-auth-webserver — client half (the Web UI settings card).
  *
  * Registers the auth card into the Plugins settings section through the
- * `settings.plugin.item` slot, with bilingual copy installed through the
- * client locale service (`ctx.locale.register`) and the slot's `locale:`
- * seat synthesizing the `t` prop. Icons come from
- * `@deepseek-ai/dsh-client-ui-primitives` plus one inline SVG lock mark.
- *
- * The handoff id must equal the loader entry name (the package name), which
- * is also the graph row id served at /plugins/<id>/client.js.
+ * `settings.plugin.item` slot, aligned with official DSH card design.
  */
 
 window.__ModuleLoader__.load({
@@ -51,7 +45,7 @@ window.__ModuleLoader__.load({
       protectedStatus: "Protected",
       unprotectedStatus: "No Password",
       title: "Web authentication",
-      description: "Configure the login credentials, password protection, and session state",
+      description: "Configure login credentials, password protection, and sessions",
       usernameLabel: "Username",
       passwordLabel: "Password",
       passwordPlaceholder: "Leave blank to disable password protection",
@@ -69,14 +63,14 @@ window.__ModuleLoader__.load({
       requestFailed: "Request failed: {message}",
     };
 
-    /** Inline lock mark for the card header (kept local: no emoji, no extra deps). */
+    /** Inline lock mark for the card header */
     function LockIcon(props) {
       return jsx("svg", {
         fill: "none",
         viewBox: "0 0 24 24",
         stroke: "currentColor",
         "aria-hidden": true,
-        style: { width: 16, height: 16, flexShrink: 0, color: "#60a5fa", ...props.style },
+        style: { width: 16, height: 16, flexShrink: 0, color: "var(--dsw-alias-brand-primary, #60a5fa)", ...props.style },
         children: jsx("path", {
           strokeLinecap: "round",
           strokeLinejoin: "round",
@@ -153,282 +147,320 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const isProtected = Boolean(password);
+
       return jsx("li", {
         style: {
-          border: "1px solid var(--dsw-alias-border-l2, #333)",
-          borderRadius: "8px",
-          background: "var(--dsw-alias-bg-layer-2, #1e1e1e)",
-          marginBottom: "12px",
-          overflow: "hidden",
-          listStyle: "none"
+          listStyle: "none",
+          border: "1px solid " + (open ? "var(--dsw-alias-label-dimmed, #4b5563)" : "var(--dsw-alias-border-l2, #333)"),
+          borderRadius: "12px",
+          background: open ? "var(--dsw-alias-bg-layer-2, #1e1e1e)" : "var(--dsw-alias-bg-layer-3, #242424)",
+          transition: "border-color .16s, background .16s",
         },
         children: jsxs("div", {
           children: [
             jsxs("button", {
               type: "button",
               onClick: () => setOpen(!open),
+              "aria-expanded": open,
               style: {
                 width: "100%",
-                padding: "12px 16px",
+                appearance: "none",
+                border: 0,
+                background: "none",
+                font: "inherit",
+                color: "inherit",
+                textAlign: "left",
+                cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
-                background: "transparent",
-                border: "none",
-                color: "inherit",
-                cursor: "pointer",
-                textAlign: "left",
                 gap: "12px",
+                padding: "14px 16px",
+                borderRadius: "12px",
               },
               children: [
-                // Left Title & Description
-                jsxs("div", {
-                  style: { display: "flex", flexDirection: "column", gap: "3px", minWidth: 0 },
+                jsxs("span", {
+                  style: {
+                    flex: 1,
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px",
+                  },
                   children: [
                     jsxs("span", {
                       style: {
-                        display: "flex",
+                        display: "inline-flex",
                         alignItems: "center",
                         gap: "8px",
+                        fontSize: "15px",
                         fontWeight: "600",
-                        fontSize: "14px",
-                        color: "var(--dsw-alias-label-primary, #fff)",
-                        whiteSpace: "nowrap",
+                        lineHeight: 1.4,
+                        color: "var(--dsw-alias-label-primary, #f3f4f6)",
                       },
-                      children: [jsx(LockIcon, {}), t("title")],
+                      children: [
+                        jsx(LockIcon, {}),
+                        jsx("span", { children: t("title") }),
+                      ],
                     }),
                     jsx("span", {
                       style: {
-                        fontSize: "12px",
-                        color: "var(--dsw-alias-label-secondary, #aaa)",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
+                        fontSize: "13px",
+                        lineHeight: 1.5,
+                        color: "var(--dsw-alias-label-tertiary, #9ca3af)",
                       },
                       children: t("description"),
                     }),
                   ],
                 }),
-
-                // Right Status Badge & Arrow
-                jsxs("div", {
-                  style: { display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 },
-                  children: [
-                    dirty ? jsx("span", {
+                dirty
+                  ? jsx("span", {
                       style: {
+                        flex: "none",
+                        borderRadius: "999px",
+                        padding: "1px 8px",
                         fontSize: "11px",
-                        background: "rgba(255, 170, 0, 0.2)",
-                        color: "#ffaa00",
-                        padding: "2px 6px",
-                        borderRadius: "4px"
-                      },
-                      children: t("unsaved")
-                    }) : null,
-                    jsxs("span", {
-                      style: {
-                        padding: "2px 8px",
-                        borderRadius: "10px",
-                        fontSize: "11px",
+                        lineHeight: "17px",
                         fontWeight: "500",
-                        background: password ? "rgba(16, 185, 129, 0.15)" : "rgba(59, 130, 246, 0.15)",
-                        color: password ? "#10b981" : "#60a5fa",
-                        border: password ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(59, 130, 246, 0.3)",
+                        whiteSpace: "nowrap",
+                        background: "var(--dsw-alias-bg-module-platform, rgba(255,255,255,0.08))",
+                        color: "var(--dsw-alias-label-secondary, #d1d5db)",
+                      },
+                      children: t("unsaved"),
+                    })
+                  : jsx("span", {
+                      style: {
+                        flex: "none",
+                        borderRadius: "999px",
+                        padding: "1px 8px",
+                        fontSize: "11px",
+                        lineHeight: "17px",
+                        fontWeight: "500",
+                        whiteSpace: "nowrap",
                         display: "inline-flex",
                         alignItems: "center",
                         gap: "5px",
-                        whiteSpace: "nowrap",
+                        background: isProtected ? "rgba(16, 185, 129, 0.12)" : "rgba(156, 163, 175, 0.12)",
+                        color: isProtected ? "#10b981" : "#9ca3af",
+                        border: isProtected ? "1px solid rgba(16, 185, 129, 0.25)" : "1px solid rgba(156, 163, 175, 0.2)",
                       },
                       children: [
                         jsx("span", {
                           style: {
-                            width: "6px",
-                            height: "6px",
+                            width: 6,
+                            height: 6,
                             borderRadius: "50%",
-                            background: password ? "#10b981" : "#60a5fa",
+                            background: isProtected ? "#10b981" : "#9ca3af",
+                            display: "inline-block",
                           },
                         }),
-                        password ? t("protectedStatus", "密码保护中") : t("activeStatus", "已启用"),
+                        jsx("span", { children: isProtected ? t("protectedStatus") : t("unprotectedStatus") }),
                       ],
                     }),
-                    jsx(IconChevronDownOutline14, {
-                      style: {
-                        transform: open ? "rotate(180deg)" : "rotate(0deg)",
-                        transition: "transform 0.2s",
-                        color: "var(--dsw-alias-label-secondary, #aaa)",
-                      },
-                    }),
-                  ],
-                }),
-              ]
-            }),
-            open ? jsxs("div", {
-              style: {
-                padding: "0 16px 16px 16px",
-                borderTop: "1px solid var(--dsw-alias-border-l2, #333)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "14px",
-                paddingTop: "14px"
-              },
-              children: [
-                jsxs("div", {
-                  style: { display: "flex", flexDirection: "column", gap: "6px" },
-                  children: [
-                    jsx("label", {
-                      style: { fontSize: "13px", fontWeight: "500", color: "var(--dsw-alias-label-primary, #eee)" },
-                      children: t("usernameLabel")
-                    }),
-                    jsx("input", {
-                      type: "text",
-                      value: username,
-                      onChange: (e) => { setUsername(e.target.value); setDirty(true); },
-                      style: {
-                        height: "36px",
-                        padding: "0 12px",
-                        borderRadius: "6px",
-                        border: "1px solid var(--dsw-alias-border-l2, #444)",
-                        background: "var(--dsw-alias-bg-layer-3, #2a2a2a)",
-                        color: "inherit",
-                        fontSize: "13px"
-                      }
-                    })
-                  ]
-                }),
-                jsxs("div", {
-                  style: { display: "flex", flexDirection: "column", gap: "6px" },
-                  children: [
-                    jsx("label", {
-                      style: { fontSize: "13px", fontWeight: "500", color: "var(--dsw-alias-label-primary, #eee)" },
-                      children: t("passwordLabel")
-                    }),
-                    jsxs("div", {
-                      style: { display: "flex", gap: "8px" },
-                      children: [
-                        jsx("input", {
-                          type: showPassword ? "text" : "password",
-                          value: password,
-                          onChange: (e) => { setPassword(e.target.value); setDirty(true); },
-                          placeholder: t("passwordPlaceholder"),
-                          style: {
-                            flex: 1,
-                            height: "36px",
-                            padding: "0 12px",
-                            borderRadius: "6px",
-                            border: "1px solid var(--dsw-alias-border-l2, #444)",
-                            background: "var(--dsw-alias-bg-layer-3, #2a2a2a)",
-                            color: "inherit",
-                            fontSize: "13px"
-                          }
-                        }),
-                        jsx("button", {
-                          type: "button",
-                          onClick: () => setShowPassword(!showPassword),
-                          style: {
-                            padding: "0 12px",
-                            borderRadius: "6px",
-                            border: "1px solid var(--dsw-alias-border-l2, #444)",
-                            background: "var(--dsw-alias-bg-layer-3, #2a2a2a)",
-                            color: "inherit",
-                            cursor: "pointer",
-                            fontSize: "12px"
-                          },
-                          children: showPassword ? t("hide") : t("show")
-                        })
-                      ]
-                    }),
-                    jsx("span", {
-                      style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, #888)" },
-                      children: t("passwordHint")
-                    })
-                  ]
-                }),
-                msg ? jsx("div", {
+                jsx(IconChevronDownOutline14, {
                   style: {
-                    padding: "8px 12px",
-                    borderRadius: "6px",
-                    fontSize: "12px",
+                    flex: "none",
+                    color: "var(--dsw-alias-label-tertiary, #9ca3af)",
+                    transform: open ? "rotate(180deg)" : "rotate(0deg)",
+                    transition: "transform .16s",
+                  },
+                }),
+              ],
+            }),
+            open
+              ? jsxs("div", {
+                  style: {
+                    borderTop: "1px solid var(--dsw-alias-border-l2, #333)",
+                    margin: "0 16px",
+                    paddingTop: "14px",
+                    paddingBottom: "8px",
                     display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    background: msg.type === "success" ? "rgba(0, 200, 80, 0.15)" : "rgba(255, 60, 60, 0.15)",
-                    color: msg.type === "success" ? "#00e676" : "#ff5252"
+                    flexDirection: "column",
+                    gap: "14px",
                   },
                   children: [
-                    msg.type === "success"
-                      ? jsx(IconCheckOutline16, { size: 16 })
-                      : jsx(IconWarningOutline16, { size: 16 }),
-                    jsx("span", { children: msg.text })
-                  ]
-                }) : null,
-                jsxs("div", {
-                  style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" },
-                  children: [
-                    jsx("button", {
-                      type: "button",
-                      onClick: handleLogout,
-                      style: {
-                        padding: "6px 14px",
-                        borderRadius: "6px",
-                        border: "1px solid rgba(255, 80, 80, 0.4)",
-                        background: "rgba(255, 60, 60, 0.1)",
-                        color: "#ff6b6b",
-                        cursor: "pointer",
-                        fontSize: "13px"
-                      },
-                      children: t("logout")
+                    jsxs("div", {
+                      style: { display: "flex", flexDirection: "column", gap: "6px" },
+                      children: [
+                        jsx("label", {
+                          style: { fontSize: "13px", fontWeight: "500", lineHeight: 1.5, color: "var(--dsw-alias-label-primary, #f3f4f6)" },
+                          children: t("usernameLabel"),
+                        }),
+                        jsx("input", {
+                          type: "text",
+                          value: username,
+                          onChange: (e) => { setUsername(e.target.value); setDirty(true); },
+                          style: {
+                            height: "34px",
+                            padding: "0 12px",
+                            borderRadius: "8px",
+                            border: "1px solid var(--dsw-alias-border-l2, #374151)",
+                            background: "var(--dsw-alias-bg-layer-3, #1f2937)",
+                            color: "var(--dsw-alias-label-primary, #f3f4f6)",
+                            font: "inherit",
+                            fontSize: "13px",
+                            outline: "none",
+                          },
+                        }),
+                      ],
                     }),
                     jsxs("div", {
-                      style: { display: "flex", gap: "10px" },
+                      style: { display: "flex", flexDirection: "column", gap: "6px" },
+                      children: [
+                        jsx("label", {
+                          style: { fontSize: "13px", fontWeight: "500", lineHeight: 1.5, color: "var(--dsw-alias-label-primary, #f3f4f6)" },
+                          children: t("passwordLabel"),
+                        }),
+                        jsxs("div", {
+                          style: { display: "flex", gap: "8px" },
+                          children: [
+                            jsx("input", {
+                              type: showPassword ? "text" : "password",
+                              value: password,
+                              onChange: (e) => { setPassword(e.target.value); setDirty(true); },
+                              placeholder: t("passwordPlaceholder"),
+                              style: {
+                                flex: 1,
+                                height: "34px",
+                                padding: "0 12px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--dsw-alias-border-l2, #374151)",
+                                background: "var(--dsw-alias-bg-layer-3, #1f2937)",
+                                color: "var(--dsw-alias-label-primary, #f3f4f6)",
+                                font: "inherit",
+                                fontSize: "13px",
+                                outline: "none",
+                              },
+                            }),
+                            jsx("button", {
+                              type: "button",
+                              onClick: () => setShowPassword(!showPassword),
+                              style: {
+                                padding: "0 12px",
+                                height: "34px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--dsw-alias-border-l2, #374151)",
+                                background: "none",
+                                color: "var(--dsw-alias-label-secondary, #d1d5db)",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                font: "inherit",
+                              },
+                              children: showPassword ? t("hide") : t("show"),
+                            }),
+                          ],
+                        }),
+                        jsx("p", {
+                          style: { margin: 0, fontSize: "12px", lineHeight: 1.5, color: "var(--dsw-alias-label-tertiary, #9ca3af)" },
+                          children: t("passwordHint"),
+                        }),
+                      ],
+                    }),
+                    msg
+                      ? jsx("div", {
+                          style: {
+                            padding: "8px 12px",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                            lineHeight: 1.5,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            background: msg.type === "success" ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                            color: msg.type === "success" ? "#10b981" : "#ef4444",
+                            border: msg.type === "success" ? "1px solid rgba(16, 185, 129, 0.25)" : "1px solid rgba(239, 68, 68, 0.25)",
+                          },
+                          children: [
+                            msg.type === "success"
+                              ? jsx(IconCheckOutline16, { size: 16 })
+                              : jsx(IconWarningOutline16, { size: 16 }),
+                            jsx("span", { children: msg.text }),
+                          ],
+                        })
+                      : null,
+                    jsxs("div", {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 0 4px",
+                        borderTop: "1px solid var(--dsw-alias-border-l2, #333)",
+                      },
                       children: [
                         jsx("button", {
                           type: "button",
-                          disabled: !dirty || saving,
-                          onClick: handleDiscard,
+                          onClick: handleLogout,
                           style: {
-                            padding: "6px 14px",
-                            borderRadius: "6px",
-                            border: "1px solid var(--dsw-alias-border-l2, #444)",
-                            background: "transparent",
-                            color: "inherit",
-                            cursor: dirty && !saving ? "pointer" : "default",
-                            opacity: dirty && !saving ? 1 : 0.5,
-                            fontSize: "13px"
+                            appearance: "none",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            borderRadius: "8px",
+                            padding: "5px 14px",
+                            background: "rgba(239, 68, 68, 0.08)",
+                            color: "#ef4444",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            lineHeight: 1.5,
+                            font: "inherit",
                           },
-                          children: t("discard")
+                          children: t("logout"),
                         }),
-                        jsx("button", {
-                          type: "button",
-                          disabled: !dirty || saving,
-                          onClick: handleSave,
-                          style: {
-                            padding: "6px 16px",
-                            borderRadius: "6px",
-                            border: "none",
-                            background: "#3b82f6",
-                            color: "#fff",
-                            fontWeight: "500",
-                            cursor: dirty && !saving ? "pointer" : "default",
-                            opacity: dirty && !saving ? 1 : 0.5,
-                            fontSize: "13px"
-                          },
-                          children: saving ? t("saving") : t("save")
-                        })
-                      ]
-                    })
-                  ]
+                        jsxs("div", {
+                          style: { display: "flex", gap: "8px" },
+                          children: [
+                            jsx("button", {
+                              type: "button",
+                              disabled: !dirty || saving,
+                              onClick: handleDiscard,
+                              style: {
+                                appearance: "none",
+                                border: "1px solid var(--dsw-alias-border-l2, #374151)",
+                                borderRadius: "8px",
+                                padding: "5px 14px",
+                                background: "none",
+                                color: "var(--dsw-alias-label-secondary, #d1d5db)",
+                                cursor: dirty && !saving ? "pointer" : "default",
+                                opacity: dirty && !saving ? 1 : 0.4,
+                                fontSize: "13px",
+                                lineHeight: 1.5,
+                                font: "inherit",
+                              },
+                              children: t("discard"),
+                            }),
+                            jsx("button", {
+                              type: "button",
+                              disabled: !dirty || saving,
+                              onClick: handleSave,
+                              style: {
+                                appearance: "none",
+                                border: "1px solid transparent",
+                                borderRadius: "8px",
+                                padding: "5px 14px",
+                                background: "var(--dsw-alias-label-primary, #f3f4f6)",
+                                color: "var(--dsw-alias-bg-layer-3, #111827)",
+                                fontWeight: "500",
+                                cursor: dirty && !saving ? "pointer" : "default",
+                                opacity: dirty && !saving ? 1 : 0.4,
+                                fontSize: "13px",
+                                lineHeight: 1.5,
+                                font: "inherit",
+                              },
+                              children: saving ? t("saving") : t("save"),
+                            }),
+                          ],
+                        }),
+                      ],
+                    }),
+                  ],
                 })
-              ]
-            }) : null
-          ]
-        })
+              : null,
+          ],
+        }),
       });
     }
 
     exports.inject = ["locale", "slots"];
 
     exports.apply = function (ctx) {
-      // Bilingual dictionaries, registered before the slot so the renderer's
-      // `t` seat can resolve them once the card mounts.
       ctx.locale.register(NS, { zh, en });
       ctx.slots.inject("settings.plugin.item", function* () {
         yield ctx.slots.register({
@@ -436,11 +468,11 @@ window.__ModuleLoader__.load({
           key: "auth-webserver",
           id: "auth-webserver",
           order: -1,
-          locale: NS
+          locale: NS,
         }, AuthCard);
       });
     };
 
     return exports;
-  }
+  },
 });

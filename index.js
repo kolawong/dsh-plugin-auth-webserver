@@ -141,8 +141,17 @@ export class AuthWebServer extends Service {
   server;
   listenedPort;
   secret;
+  /** Earliest token issue time still accepted; every session issued before a logout is revoked. */
+  invalidBefore = 0;
 
   constructor(ctx, config) {
+    ctx.inject(["settings"], (sctx) => {
+      try {
+        sctx.settings.register("auth-webserver", AuthWebServer.Config);
+      } catch (e) {
+        ctx.logger?.warn?.("[AuthWebServer] Settings registration:", e);
+      }
+    });
     super(ctx, "webServer");
     this.config = config;
     this.loadState();
@@ -190,6 +199,10 @@ export class AuthWebServer extends Service {
       kind: "exact",
       path: "/api/auth.logout",
       handler: async (req, res) => {
+        // Revoke every previously issued session token server-side, so a
+        // client that keeps a stale cookie cannot re-enter after logout.
+        this.invalidBefore = Date.now();
+        this.saveState();
         res.writeHead(200, {
           "Content-Type": "application/json; charset=utf-8",
           "Set-Cookie": `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
@@ -271,6 +284,7 @@ export class AuthWebServer extends Service {
     if (typeof state.username === "string") this.config.username = state.username;
     if (typeof state.password === "string") this.config.password = state.password;
     if (typeof state.realm === "string") this.config.realm = state.realm;
+    if (typeof state.logoutAt === "number") this.invalidBefore = state.logoutAt;
   }
 
   /** Persist the credential overrides made through the settings card. */
@@ -282,6 +296,7 @@ export class AuthWebServer extends Service {
         username: this.config.username ?? "admin",
         password: this.config.password ?? "",
         realm: this.config.realm ?? "DeepSeek Harness Authentication",
+        ...(this.invalidBefore > 0 ? { logoutAt: this.invalidBefore } : {}),
       }, null, 2), { encoding: "utf8", mode: 0o600 });
     } catch (e) {
       this.ctx.logger.warn("Failed to persist auth state:", e);
@@ -319,6 +334,10 @@ export class AuthWebServer extends Service {
     const [tsStr, sig] = parts;
     const ts = parseInt(tsStr, 10);
     if (isNaN(ts) || Date.now() - ts > TOKEN_MAX_AGE_MS || ts > Date.now() + 60000) {
+      return false;
+    }
+    // Sessions issued before the last logout are revoked.
+    if (ts < this.invalidBefore) {
       return false;
     }
     const expectedSig = createHmac("sha256", this.secret).update(`${expectedUser}:${expectedPass}:${ts}`).digest("hex");
@@ -368,7 +387,7 @@ export class AuthWebServer extends Service {
     };
   }
 
-  tapIndex(transform) {
+  tapIndex(transform) { console.log('[AuthWebServer] tapIndex called, total taps:', this.indexTaps.length + 1);
     this.indexTaps.push(transform);
     return () => {
       const at = this.indexTaps.indexOf(transform);
@@ -405,9 +424,13 @@ export class AuthWebServer extends Service {
       return true;
     }
 
-    // 2. HTTP Basic Authorization header (for CLI / API clients)
+    // 2. HTTP Basic Authorization header — for CLI / API clients ONLY.
+    // Browsers (Origin or Sec-Fetch-* headers present) must use the cookie
+    // session: a browser with cached Basic credentials would otherwise
+    // re-authenticate silently on every request, making logout impossible.
     const auth = req.headers["authorization"];
-    if (auth && auth.startsWith("Basic ")) {
+    const isBrowser = req.headers.origin !== undefined || req.headers["sec-fetch-site"] !== undefined;
+    if (!isBrowser && auth && auth.startsWith("Basic ")) {
       try {
         const b64 = auth.slice(6).trim();
         const decoded = Buffer.from(b64, "base64").toString("utf-8");
@@ -807,11 +830,24 @@ export class AuthWebServer extends Service {
     const handle = async (req, res) => {
       const rawPath = new URL(req.url ?? "/", "http://x").pathname;
 
-      // The login endpoint is public by design; everything else is gated.
-      if (rawPath === "/api/auth.login") {
-        const route = this.exact.get("/api/auth.login");
-        if (route) {
+      // Public routes: login endpoint, PWA webmanifest, favicons, robots.txt
+      const isPublicPath =
+        rawPath === "/api/auth.login" ||
+        rawPath === "/manifest.webmanifest" ||
+        rawPath === "/manifest.json" ||
+        rawPath === "/favicon.ico" ||
+        rawPath === "/favicon.svg" ||
+        rawPath === "/apple-touch-icon.png" ||
+        rawPath === "/robots.txt";
+
+      if (isPublicPath) {
+        const route = this.match(rawPath);
+        if (route !== undefined) {
           await route.handler(req, res);
+          return;
+        }
+        if (this.fallback !== undefined) {
+          await this.fallback(req, res);
           return;
         }
       }
@@ -851,7 +887,7 @@ export class AuthWebServer extends Service {
 
     this.server = createServer((req, res) => {
       handle(req, res).catch((err) => {
-        this.ctx.logger.warn(err instanceof Error ? err : new Error(String(err)));
+        console.error("[AuthWebServer handle error]", err); this.ctx.logger.warn(err instanceof Error ? err : new Error(String(err)));
         if (res.headersSent) {
           res.destroy();
           return;
@@ -944,6 +980,16 @@ export class AuthWebServer extends Service {
     return best;
   }
 
+  collectIndexInjections() {
+    const table = [];
+    this.ctx.emit("webserver/index-inject", table);
+    return table;
+  }
+
+  renderIndex(html) {
+    return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()));
+  }
+
   applyIndexTaps(html) {
     let out = html;
     for (const transform of this.indexTaps) out = transform(out);
@@ -977,4 +1023,59 @@ export class AuthWebServer extends Service {
   }
 }
 
+function escapeHtmlAttribute(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function renderRow(row) {
+  switch (row.kind) {
+    case 'global': {
+      const name = JSON.stringify(row.name).replaceAll('<', '\\u003c');
+      const value = row.value === undefined
+        ? 'undefined'
+        : JSON.stringify(row.value).replaceAll('<', '\\u003c');
+      return { placement: 'head', markup: `<script>globalThis[${name}] = ${value}</script>` };
+    }
+    case 'script':
+      return { placement: row.placement, markup: `<script>${row.text}</script>` };
+    case 'script-src':
+      return { placement: row.placement, markup: `<script src="${escapeHtmlAttribute(row.src)}"></script>` };
+    case 'style':
+      return { placement: 'head', markup: `<style>${row.text}</style>` };
+    case 'html':
+      return { placement: row.placement, markup: row.html };
+    default:
+      return { placement: 'head', markup: '' };
+  }
+}
+
+function splice(html, at, markup) {
+  return `${html.slice(0, at)}${markup}${html.slice(at)}`;
+}
+
+export function renderIndexInjections(html, rows) {
+  let head = '';
+  let body = '';
+  for (const row of rows) {
+    const rendered = renderRow(row);
+    if (rendered.placement === 'head') head += rendered.markup;
+    else body += rendered.markup;
+  }
+  let out = html;
+  if (head !== '') {
+    const open = /<head(?:\s[^>]*)?>/i.exec(out);
+    out = open === null ? `${head}${out}` : splice(out, open.index + open[0].length, head);
+  }
+  if (body !== '') {
+    const open = /<body(?:\s[^>]*)?>/i.exec(out);
+    out = open === null ? `${out}${body}` : splice(out, open.index + open[0].length, body);
+  }
+  return out;
+}
+
 export default AuthWebServer;
+
