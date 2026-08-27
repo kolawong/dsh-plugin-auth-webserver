@@ -8,7 +8,13 @@
  * 3. WebSocket upgrade token verification
  * 4. crypto.randomUUID polyfill for non-HTTPS / raw-IP web clients
  * 5. Remote-IP Host/Origin normalization for privileged RPC endpoints
+ *    (authenticated sessions only - never while authentication is disabled,
+ *    so the stock loopback Host fence keeps defending DNS rebinding)
  * 6. Auth settings APIs consumed by the Web UI settings card
+ * 7. Secure-by-default boot guard (QVD-2026-57410 class): serving on a
+ *    non-loopback interface with an empty password generates a strong random
+ *    password instead of leaving the privileged /api RPC surface open
+ * 8. Per-IP failed-login throttling and constant-time credential compares
  *
  * Installed as a `dsh.bundle`: the shipped cordis.patch.yml disables the
  * in-box `webserver` row and inserts this plugin as `webserver-auth`. It
@@ -23,7 +29,7 @@
 
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
@@ -35,6 +41,12 @@ const TOKEN_MAX_AGE_SECONDS = 30 * 24 * 3600;
 const TOKEN_MAX_AGE_MS = TOKEN_MAX_AGE_SECONDS * 1000;
 /** Plugin-owned state directory under the DeepSeek Harness home. */
 const STATE_DIR_SEGMENTS = ["plugins", "dsh-plugin-auth-webserver"];
+/** Failed-login throttling: consecutive failures (per client IP) before lockout. */
+const LOGIN_MAX_FAILURES = 5;
+/** Failed-login lockout base delay, doubling per extra failure. */
+const LOGIN_LOCKOUT_BASE_MS = 15 * 1000;
+/** Failed-login lockout ceiling. */
+const LOGIN_LOCKOUT_CAP_MS = 15 * 60 * 1000;
 
 export const name = "auth-webserver";
 
@@ -64,11 +76,15 @@ const MESSAGES = {
     methodNotAllowed: "方法不允许",
     badCredentials: "用户名或密码错误",
     authRequired: "需要身份验证",
+    tooManyAttempts: "登录尝试过于频繁，请稍后再试",
+    remoteAuthRequired: "监听非本机回环地址时不能关闭密码保护",
   },
   en: {
     methodNotAllowed: "Method not allowed",
     badCredentials: "Invalid username or password",
     authRequired: "Authentication required",
+    tooManyAttempts: "Too many failed attempts; please try again later",
+    remoteAuthRequired: "Cannot disable password protection while listening on a non-loopback interface",
   },
 };
 
@@ -88,6 +104,17 @@ function pickLang(req) {
 
 function msg(lang, key) {
   return (MESSAGES[lang] ?? MESSAGES.zh)[key] ?? key;
+}
+
+/**
+ * Constant-time string comparison: both sides are hashed to fixed-length
+ * digests first, so timingSafeEqual never throws on a length mismatch and
+ * no length information leaks through comparison timing.
+ */
+function safeEqual(a, b) {
+  const ha = createHash("sha256").update(`${a}`).digest();
+  const hb = createHash("sha256").update(`${b}`).digest();
+  return timingSafeEqual(ha, hb);
 }
 
 /** Login page copy, per language. */
@@ -128,7 +155,10 @@ export class AuthWebServer extends Service {
     host: z.union([z.const("127.0.0.1"), z.const("0.0.0.0")]).default("0.0.0.0"),
     port: z.natural().max(65535).default(3080),
     username: z.string().default("admin"),
-    password: z.string().default(""),
+    // role('secret'): the settings layer redacts this field out of every
+    // settings.describe response and writes it through the secret slot
+    // instead - the credential must never ride a settings read over the wire.
+    password: z.string().default("").role("secret"),
     realm: z.string().default("DeepSeek Harness Authentication"),
   });
 
@@ -136,6 +166,8 @@ export class AuthWebServer extends Service {
   prefixes = new Map();
   upgrades = new Map();
   upgradedSockets = new Set();
+  /** Per-IP failed-login counters backing the brute-force throttle. */
+  loginFailures = new Map();
   indexTaps = [];
   fallback;
   server;
@@ -156,6 +188,7 @@ export class AuthWebServer extends Service {
     this.config = config;
     this.loadState();
     this.initSecret();
+    this.ensureAuthEnabled();
 
     // Register Auth Settings & Login APIs
     this.register({
@@ -168,23 +201,40 @@ export class AuthWebServer extends Service {
           res.end(JSON.stringify({ ok: false, error: msg(lang, "methodNotAllowed") }));
           return;
         }
+        // Brute-force throttle: this endpoint is public and pre-authentication.
+        const waitMs = this.throttleRemainingMs(req);
+        if (waitMs > 0) {
+          res.writeHead(429, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+            "Retry-After": String(Math.max(1, Math.ceil(waitMs / 1000))),
+          });
+          res.end(JSON.stringify({ ok: false, error: msg(lang, "tooManyAttempts") }));
+          return;
+        }
         let body = "";
         req.on("data", (c) => { body += c; });
         req.on("end", () => {
           try {
             const data = JSON.parse(body || "{}");
-            const expectedUser = process.env.DSH_AUTH_USER || this.config.username || "admin";
-            const expectedPass = process.env.DSH_AUTH_PASS || this.config.password || "";
+            const expectedUser = this.effectiveUsername;
+            const expectedPass = this.effectivePassword;
 
-            if (!expectedPass || (data.username === expectedUser && data.password === expectedPass)) {
+            if (!expectedPass || (safeEqual(data.username ?? "", expectedUser) && safeEqual(data.password ?? "", expectedPass))) {
+              this.recordLoginSuccess(req);
               const token = this.generateToken(expectedUser, expectedPass);
               res.writeHead(200, {
                 "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
                 "Set-Cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TOKEN_MAX_AGE_SECONDS}`,
               });
               res.end(JSON.stringify({ ok: true, username: expectedUser }));
             } else {
-              res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+              this.recordLoginFailure(req);
+              res.writeHead(401, {
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
+              });
               res.end(JSON.stringify({ ok: false, error: msg(lang, "badCredentials") }));
             }
           } catch (err) {
@@ -205,6 +255,7 @@ export class AuthWebServer extends Service {
         this.saveState();
         res.writeHead(200, {
           "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
           "Set-Cookie": `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
         });
         res.end(JSON.stringify({ ok: true }));
@@ -215,12 +266,19 @@ export class AuthWebServer extends Service {
       kind: "exact",
       path: "/api/auth.get",
       handler: async (req, res) => {
-        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        // Never echo the password (config, state, or env) back over the wire:
+        // an authenticated session has no business reading the shared secret.
+        res.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
         res.end(JSON.stringify({
           ok: true,
-          username: this.config.username || "admin",
-          password: this.config.password || "",
+          username: this.effectiveUsername,
           realm: this.config.realm || "DeepSeek Harness Authentication",
+          authEnabled: this.authEnabled,
+          loopbackOnly: this.loopbackOnly,
         }));
       },
     });
@@ -240,6 +298,17 @@ export class AuthWebServer extends Service {
         req.on("end", () => {
           try {
             const data = JSON.parse(body);
+            // Refuse to disable password protection while serving on a
+            // non-loopback interface: unauthenticated remote access to the
+            // privileged /api RPC surface is the QVD-2026-57410 exposure.
+            if (data.password !== undefined && String(data.password) === "" && !this.loopbackOnly) {
+              res.writeHead(400, {
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
+              });
+              res.end(JSON.stringify({ ok: false, error: msg(lang, "remoteAuthRequired") }));
+              return;
+            }
             if (data.username !== undefined) this.config.username = String(data.username);
             if (data.password !== undefined) this.config.password = String(data.password);
             if (data.realm !== undefined) this.config.realm = String(data.realm);
@@ -247,10 +316,12 @@ export class AuthWebServer extends Service {
             // Persist to the plugin-owned state file under $DSH_HOME.
             this.saveState();
 
-            // Also refresh the cookie for the current admin session.
-            const token = this.generateToken(this.config.username, this.config.password);
+            // Also refresh the cookie for the current admin session, minted
+            // from the effective credentials so env overrides stay valid.
+            const token = this.generateToken(this.effectiveUsername, this.effectivePassword);
             res.writeHead(200, {
               "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-store",
               "Set-Cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TOKEN_MAX_AGE_SECONDS}`,
             });
             res.end(JSON.stringify({
@@ -356,6 +427,82 @@ export class AuthWebServer extends Service {
     return this.config.host;
   }
 
+  /** Effective credentials: environment overrides win over config/state. */
+  get effectiveUsername() {
+    return process.env.DSH_AUTH_USER || this.config.username || "admin";
+  }
+
+  get effectivePassword() {
+    return process.env.DSH_AUTH_PASS || this.config.password || "";
+  }
+
+  /** Whether a password is in force (env, config, or generated). */
+  get authEnabled() {
+    return this.effectivePassword.length > 0;
+  }
+
+  /** Whether the server binds the loopback interface only. */
+  get loopbackOnly() {
+    return this.config.host === "127.0.0.1";
+  }
+
+  clientIp(req) {
+    return req.socket?.remoteAddress ?? "unknown";
+  }
+
+  /** Milliseconds the client IP stays locked out; 0 when not throttled. */
+  throttleRemainingMs(req) {
+    const entry = this.loginFailures.get(this.clientIp(req));
+    if (entry === undefined) return 0;
+    return Math.max(0, entry.lockedUntil - Date.now());
+  }
+
+  recordLoginSuccess(req) {
+    this.loginFailures.delete(this.clientIp(req));
+  }
+
+  recordLoginFailure(req) {
+    const ip = this.clientIp(req);
+    const now = Date.now();
+    const fails = (this.loginFailures.get(ip)?.fails ?? 0) + 1;
+    const lockout = fails >= LOGIN_MAX_FAILURES
+      ? Math.min(LOGIN_LOCKOUT_BASE_MS * 2 ** (fails - LOGIN_MAX_FAILURES), LOGIN_LOCKOUT_CAP_MS)
+      : 0;
+    this.loginFailures.set(ip, { fails, lockedUntil: lockout > 0 ? now + lockout : 0 });
+    // Bound the table: drop expired entries when it grows large.
+    if (this.loginFailures.size > 10000) {
+      for (const [key, entry] of this.loginFailures) {
+        if (entry.lockedUntil <= now) this.loginFailures.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Secure-by-default guard (QVD-2026-57410 class): serving on a non-loopback
+   * interface with authentication disabled leaves the privileged /api RPC
+   * surface protected only by the stock Host-header loopback fence, which is
+   * not an auth layer. Generate a strong random password instead, persist it,
+   * and surface it once so the deployment stays both reachable and closed.
+   */
+  ensureAuthEnabled() {
+    if (this.authEnabled || this.loopbackOnly) return;
+    const generated = randomBytes(24).toString("base64url");
+    this.config.password = generated;
+    this.saveState();
+    const banner = [
+      "[AuthWebServer] SECURITY: authentication was disabled (empty password) while binding 0.0.0.0.",
+      "That combination exposes the unauthenticated /api RPC surface (QVD-2026-57410): the stock Host-header loopback fence is not an auth layer, and remote access is exactly what this plugin's Host normalization would then launder.",
+      `A random password has been generated and persisted to ${join(stateDir(), "state.json")} (mode 0600):`,
+      `  username: ${this.effectiveUsername}`,
+      `  password: ${generated}`,
+      "Set `password` in your profile config or DSH_AUTH_PASS to choose your own; bind 127.0.0.1 if you truly want no login.",
+    ].join("\n");
+    console.log(banner);
+    try {
+      this.ctx.logger?.warn?.(banner);
+    } catch {}
+  }
+
   register(route) {
     const table = route.kind === "exact" ? this.exact : this.prefixes;
     if (table.has(route.path)) {
@@ -411,8 +558,8 @@ export class AuthWebServer extends Service {
   }
 
   checkAuth(req) {
-    const expectedUser = process.env.DSH_AUTH_USER || this.config.username || "admin";
-    const expectedPass = process.env.DSH_AUTH_PASS || this.config.password || "";
+    const expectedUser = this.effectiveUsername;
+    const expectedPass = this.effectivePassword;
 
     if (!expectedPass) {
       return true;
@@ -431,6 +578,8 @@ export class AuthWebServer extends Service {
     const auth = req.headers["authorization"];
     const isBrowser = req.headers.origin !== undefined || req.headers["sec-fetch-site"] !== undefined;
     if (!isBrowser && auth && auth.startsWith("Basic ")) {
+      // The brute-force throttle covers credential attempts on this path too.
+      if (this.throttleRemainingMs(req) > 0) return false;
       try {
         const b64 = auth.slice(6).trim();
         const decoded = Buffer.from(b64, "base64").toString("utf-8");
@@ -438,7 +587,12 @@ export class AuthWebServer extends Service {
         if (idx !== -1) {
           const user = decoded.slice(0, idx);
           const pass = decoded.slice(idx + 1);
-          return user === expectedUser && pass === expectedPass;
+          if (safeEqual(user, expectedUser) && safeEqual(pass, expectedPass)) {
+            this.recordLoginSuccess(req);
+            return true;
+          }
+          this.recordLoginFailure(req);
+          return false;
         }
       } catch {}
     }
@@ -447,6 +601,12 @@ export class AuthWebServer extends Service {
   }
 
   applySecurityHeaders(req) {
+    // The Host/Origin rewrite vouches for an authenticated session on a
+    // non-loopback serving address. With authentication disabled it would
+    // instead launder unauthenticated requests - notably DNS-rebound browser
+    // requests (Host: attacker.example) - past the stock loopback Host fence
+    // (QVD-2026-57410), so it must never run without credentials in force.
+    if (!this.authEnabled) return;
     const port = this.listenedPort || 3080;
     if (req.headers.host && !req.headers.host.startsWith("127.0.0.1") && !req.headers.host.startsWith("localhost")) {
       req.headers["x-forwarded-host"] = req.headers.host;
@@ -822,6 +982,8 @@ export class AuthWebServer extends Service {
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
     });
     res.end(html);
   }
@@ -864,7 +1026,11 @@ export class AuthWebServer extends Service {
 
         // API / CLI clients get a JSON 401. No WWW-Authenticate header, so
         // browsers never fall back to their native credential dialog.
-        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.writeHead(401, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
         res.end(JSON.stringify({ ok: false, error: msg(pickLang(req), "authRequired") }));
         return;
       }

@@ -5,7 +5,7 @@ dist/
 
 # verification artifacts
 .verify-pack/
-.verify-home/
+.verify-home*/
 .verify-store/
 
 # j-space session ledger

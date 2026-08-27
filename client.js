@@ -25,8 +25,8 @@ window.__ModuleLoader__.load({
       description: "配置登录凭据、密码保护与登录会话",
       usernameLabel: "登录用户名",
       passwordLabel: "登录密码",
-      passwordPlaceholder: "留空则关闭密码保护",
-      passwordHint: "修改后立即生效；未登录用户访问 Web 界面时会看到登录页面。",
+      passwordPlaceholder: "输入新密码",
+      passwordHint: "留空保存可关闭密码保护（仅限监听 127.0.0.1 时）；修改立即生效，当前密码不会回显。",
       show: "显示",
       hide: "隐藏",
       unsaved: "未保存",
@@ -48,8 +48,8 @@ window.__ModuleLoader__.load({
       description: "Configure login credentials, password protection, and sessions",
       usernameLabel: "Username",
       passwordLabel: "Password",
-      passwordPlaceholder: "Leave blank to disable password protection",
-      passwordHint: "Changes apply immediately; unauthenticated visitors see the login page.",
+      passwordPlaceholder: "Enter a new password",
+      passwordHint: "Saving a blank password disables protection (loopback 127.0.0.1 only); changes apply immediately and the current password is never echoed back.",
       show: "Show",
       hide: "Hide",
       unsaved: "Unsaved",
@@ -84,10 +84,14 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(false);
       const [username, setUsername] = useState("");
       const [password, setPassword] = useState("");
+      const [passwordDirty, setPasswordDirty] = useState(false);
       const [showPassword, setShowPassword] = useState(false);
       const [dirty, setDirty] = useState(false);
       const [saving, setSaving] = useState(false);
       const [msg, setMsg] = useState(null);
+      // authEnabled is null until the first auth.get resolves: the status pill
+      // assumes "protected" rather than flashing an unprotected state.
+      const [authEnabled, setAuthEnabled] = useState(null);
 
       const loadAuth = () => {
         fetch("/api/auth.get")
@@ -95,7 +99,9 @@ window.__ModuleLoader__.load({
           .then(data => {
             if (data && data.ok) {
               setUsername(data.username || "");
-              setPassword(data.password || "");
+              setAuthEnabled(Boolean(data.authEnabled));
+              setPassword("");
+              setPasswordDirty(false);
               setDirty(false);
             }
           })
@@ -109,16 +115,24 @@ window.__ModuleLoader__.load({
       const handleSave = () => {
         setSaving(true);
         setMsg(null);
+        // Only send the password when the user actually typed one: the server
+        // never echoes the current password back, so a blank untouched field
+        // means "keep it", while a cleared touched field means "disable" (and
+        // the server refuses that on non-loopback bindings).
+        const payload = { username };
+        if (passwordDirty) payload.password = password;
         fetch("/api/auth.update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify(payload)
         })
           .then(r => r.json())
           .then(data => {
             setSaving(false);
             if (data && data.ok) {
               setDirty(false);
+              setPasswordDirty(false);
+              if (passwordDirty && password) setAuthEnabled(true);
               setMsg({ type: "success", text: t("saveSuccess") });
             } else {
               setMsg({ type: "error", text: t("saveFailed", { message: data && data.error ? data.error : "?" }) });
@@ -147,7 +161,7 @@ window.__ModuleLoader__.load({
         }
       };
 
-      const isProtected = Boolean(password);
+      const isProtected = authEnabled !== false;
 
       return jsx("li", {
         style: {
@@ -317,7 +331,7 @@ window.__ModuleLoader__.load({
                             jsx("input", {
                               type: showPassword ? "text" : "password",
                               value: password,
-                              onChange: (e) => { setPassword(e.target.value); setDirty(true); },
+                              onChange: (e) => { setPassword(e.target.value); setPasswordDirty(true); setDirty(true); },
                               placeholder: t("passwordPlaceholder"),
                               style: {
                                 flex: 1,

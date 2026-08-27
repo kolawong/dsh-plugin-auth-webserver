@@ -35,8 +35,39 @@
   - 完整覆盖 HTTP 路由与 WebSocket (`upgrade`) 协议通道。
 - **远端 IP 特权 RPC 网关信任委托**
   - 自动处理请求 `Host` / `Origin` 映射，解决公网 IP 访问时 `settings.describe` 与 `agentPreset.*` 报 `HTTP 403 Forbidden` 的问题。
+  - 该改写**只对已通过凭据校验的会话生效**：未启用密码时完全跳过，官方回环 `Host` 围栏对 DNS Rebinding 的防御不受影响（见下文「安全」章节）。
+- **暴力破解防护与凭据加固**
+  - 登录接口与 Basic Auth 双路径按客户端 IP 限速，连续失败 5 次后指数退步锁定（15 秒起步、15 分钟封顶）；凭据比较为常数时间；认证响应带 `no-store` / `nosniff`；密码永不回传到浏览器。
 - **Web Crypto UUID 自动 Polyfill**
   - 自动在页面 `<head>` 中注入安全的 UUID 生成器，解决非 HTTPS 或直接 IP 访问时客户端崩溃的问题。
+
+---
+
+## 安全
+
+本插件本身就是自托管部署的安全边界，因此 0.4.0 起按 QVD-2026-57410
+（DeepSeek Harness 0.1.1-rc.2 的未授权远程代码执行漏洞，CVSS 9.8）的教训
+做了针对性加固。该漏洞的根因是：官方 `/api` 信任围栏用**客户端可伪造的
+`Host` 头**判定「回环来源」，而它本身并不是一层认证。本插件的防线：
+
+- **凭据校验先于 `/api` 围栏执行。** 所有 HTTP 与 WebSocket 请求必须先通过
+  Cookie / Basic 凭据门，才能触达任何特权 RPC。这正好落在漏洞处置建议的
+  「架构级修复」上：特权接口的认证独立于 `Host` 头，不再只靠 loopback 判定。
+- **非回环监听默认安全。** 在 `0.0.0.0` 上以空密码启动时，会自动生成高强度
+  随机密码（持久化到插件状态文件并在日志中打印一次），而不是把未认证的特权
+  RPC 面暴露出去；在非回环监听下从设置卡片清空密码会被直接拒绝。
+- **Host/Origin 改写绝不「洗白」未认证请求。** 改写只为通过凭据校验的会话
+  背书；没有密码生效时整体跳过——DNS Rebinding 页面带着
+  `Host: attacker.example` 到达时，仍会被官方围栏拒绝。
+- **抗暴力破解。** 同一 IP 连续 5 次登录失败即锁定，退避时间翻倍增长
+  （15 秒起步、15 分钟封顶），登录端点与 Basic Auth 路径同时生效；
+  凭据比较全部为常数时间。
+- **不回传任何密钥。** `/api/auth.get` 只返回用户名、realm 与「是否已启用
+  密码保护」，永不返回密码本身。
+
+推荐的部署姿势：使用足够长的独立密码；如需公网访问，前置 HTTPS 反向代理
+并校验 `Host` 头；单人本机使用保持 `127.0.0.1` 绑定；官方发布修复版本后
+及时升级 DeepSeek Harness。
 
 ---
 
@@ -49,7 +80,7 @@
 dsh plugin --profile web add github:kolawong/dsh-plugin-auth-webserver#<commit-sha>
 
 # 或使用 tarball / npm（发布后）：
-dsh plugin --profile web add ./dsh-plugin-auth-webserver-0.3.0.tgz
+dsh plugin --profile web add ./dsh-plugin-auth-webserver-0.4.0.tgz
 dsh plugin --profile web add dsh-plugin-auth-webserver
 ```
 
@@ -87,7 +118,7 @@ Web 界面设置卡片中的修改立即生效，并保存到
 | `host` | `string` | `'0.0.0.0'` | 监听的网络接口地址 (`0.0.0.0` 或 `127.0.0.1`)。 |
 | `port` | `number` | `3080` | Web 服务监听端口。 |
 | `username` | `string` | `'admin'` | 登录用户名。 |
-| `password` | `string` | `''` | 登录密码（留空则不开启验证）。 |
+| `password` | `string` | `''` | 登录密码。留空即关闭密码保护，但**仅在监听 `127.0.0.1` 时允许**；监听 `0.0.0.0` 时会在启动时自动生成随机密码。 |
 | `realm` | `string` | `'DeepSeek Harness Authentication'` | Basic Auth 认证领域标识。 |
 
 ---
@@ -96,8 +127,8 @@ Web 界面设置卡片中的修改立即生效，并保存到
 
 - `POST /api/auth.login` — 用户名密码登录并获取 Session Cookie (`{ username, password }`)。
 - `POST /api/auth.logout` — 退出登录并清除 Cookie。
-- `GET /api/auth.get` — 获取当前用户名、密码与 realm 信息（需要已登录）。
-- `POST /api/auth.update` — 实时修改用户名与密码并持久化（需要已登录）。
+- `GET /api/auth.get` — 获取当前生效的用户名、realm 与密码保护状态（需要已登录；**不返回密码**）。
+- `POST /api/auth.update` — 实时修改用户名与密码并持久化（需要已登录；非回环监听时拒绝清空密码）。
 
 ---
 
