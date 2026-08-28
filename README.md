@@ -33,48 +33,12 @@ Give your self-hosted deployment a DSH-styled **web login page**, **cookie sessi
 - **Dual-mode authentication and WebSocket protection**
   - Prefers web form / cookie sessions while staying backward-compatible with `HTTP Basic Auth` for CLI tools, `curl`, and automated API clients.
   - Full authentication coverage for both HTTP routes and WebSocket (`upgrade`) channels.
-- **Remote IP privileged RPC trust delegation**
+- **Remote IP privileged RPC trust delegation & Host ownership grant**
   - Normalizes request `Host` and `Origin` headers for authenticated sessions, eliminating HTTP 403 errors when accessing privileged RPC endpoints via a public IP.
-  - The rewrite never runs while authentication is disabled, so the stock loopback `Host` fence keeps defending against DNS rebinding (see Security).
-- **Brute-force throttling and credential hardening**
-  - Per-IP failed-login lockout (5 failures, doubling backoff) on the login endpoint and Basic Auth path, constant-time credential compares, `no-store`/`nosniff` on auth responses, and no password ever echoed back over the wire.
-- **Web Crypto UUID auto-polyfill**
+  - Fully compatible with DSH `0.1.2-alpha.1`+ native `browser-auth` and host sandbox isolation, automatically injecting `__DSH_TRANSPORT__.ownsHost` to unlock full host settings persistence on remote VPS deployments.
+- **Web Crypto UUID auto-polyfill & boot-readiness handshake**
   - Injects a safe UUID generator into the HTML `<head>` for non-HTTPS and direct-IP environments, preventing client-side crashes.
-
----
-
-## Security
-
-This plugin is the security boundary of a self-hosted deployment, so its own
-exposure is hardened accordingly (as of 0.4.0, following QVD-2026-57410 - the
-unauthenticated RCE in DeepSeek Harness 0.1.1-rc.2, CVSS 9.8, whose root cause
-is that the stock `/api` trust fence decides "loopback" from the
-client-controlled `Host` header and is not an authentication layer):
-
-- **Credentials run before the `/api` fence.** Every request - HTTP and
-  WebSocket - must pass the cookie/Basic credential gate before reaching any
-  privileged RPC. That is the advisory's architecture-level fix
-  (authentication independent of the `Host` header) deployed at the webserver
-  layer.
-- **Secure by default on non-loopback bindings.** Booting with an empty
-  password while listening on `0.0.0.0` generates a strong random password
-  (persisted to the plugin state file, printed once to the log) instead of
-  serving an unauthenticated privileged RPC surface; clearing the password
-  from the settings card is refused on non-loopback bindings.
-- **Host/Origin normalization never launders unauthenticated requests.** The
-  rewrite only vouches for sessions that passed the credential gate; with no
-  password in force it is skipped entirely, so a DNS-rebound page carrying
-  `Host: attacker.example` is still rejected by the stock fence.
-- **Brute-force resistance.** Five consecutive failed logins from one IP lock
-  it out with a doubling backoff (15s base, 15min cap), on both the login
-  endpoint and the Basic Auth path; all credential compares are constant-time.
-- **No secret echo.** `/api/auth.get` returns only the username, realm, and
-  whether protection is enabled - never the password.
-
-Recommended deployment posture: use a long unique password; put HTTPS with a
-`Host`-validating reverse proxy in front for public access; keep the bind on
-`127.0.0.1` for single-user local use; upgrade DeepSeek Harness once a patched
-release ships.
+  - Fully supports DSH `0.1.2` asynchronous boot readiness handshake (`__DSH_BOOT_READY__`) and `script-preload` tags.
 
 ---
 
@@ -87,7 +51,7 @@ Install the bundle into a profile with `dsh plugin`:
 dsh plugin --profile web add github:kolawong/dsh-plugin-auth-webserver#<commit-sha>
 
 # Or from a tarball / npm registry once published:
-dsh plugin --profile web add ./dsh-plugin-auth-webserver-0.4.0.tgz
+dsh plugin --profile web add ./dsh-plugin-auth-webserver-0.3.0.tgz
 dsh plugin --profile web add dsh-plugin-auth-webserver
 ```
 
@@ -126,7 +90,7 @@ config and the saved state.
 | `host` | `string` | `'0.0.0.0'` | Listening interface (`0.0.0.0` or `127.0.0.1`). |
 | `port` | `number` | `3080` | HTTP/WebSocket listen port. |
 | `username` | `string` | `'admin'` | Authentication username. |
-| `password` | `string` | `''` | Authentication password. Empty disables authentication, but **only on `127.0.0.1`**; on `0.0.0.0` a random password is generated at boot. |
+| `password` | `string` | `''` | Authentication password (leave empty to disable authentication). |
 | `realm` | `string` | `'DeepSeek Harness Authentication'` | Realm string used for fallback Basic Auth. |
 
 ---
@@ -135,8 +99,8 @@ config and the saved state.
 
 - `POST /api/auth.login` — Authenticate and receive a session cookie (`{ username, password }`).
 - `POST /api/auth.logout` — Invalidate the current session and clear the cookie.
-- `GET /api/auth.get` — Retrieve the effective username, realm, and auth status (requires authentication; **never returns the password**).
-- `POST /api/auth.update` — Live-update credentials and persist them (requires authentication; refuses to clear the password on non-loopback bindings).
+- `GET /api/auth.get` — Retrieve the current username, password, and realm (requires authentication).
+- `POST /api/auth.update` — Live-update credentials and persist them (requires authentication).
 
 ---
 

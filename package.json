@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-auth-webserver",
   "version": "0.4.0",
-  "description": "DeepSeek Harness bundle providing HTTP Basic Authentication, a bilingual web login page, a Web UI settings card, remote IP access, brute-force throttling, and QVD-2026-57410 hardening for self-hosted server deployments.",
+  "description": "DeepSeek Harness bundle providing HTTP Basic Authentication, a bilingual web login page, a Web UI settings card, remote IP access, and a Web Cryptography UUID polyfill for self-hosted server deployments.",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",

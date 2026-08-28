@@ -184,6 +184,37 @@ export class AuthWebServer extends Service {
         ctx.logger?.warn?.("[AuthWebServer] Settings registration:", e);
       }
     });
+
+    ctx.inject(["connection"], (cctx) => {
+      const conn = cctx.connection;
+      if (conn) {
+        const origAuthIndex = conn.authorizeIndex?.bind(conn);
+        conn.authorizeIndex = (req, res) => {
+          if (this.checkAuth(req)) return true;
+          return origAuthIndex ? origAuthIndex(req, res) : false;
+        };
+
+        const origRejection = conn.requestRejection?.bind(conn);
+        conn.requestRejection = (req) => {
+          if (this.checkAuth(req)) return undefined;
+          return origRejection ? origRejection(req) : 401;
+        };
+
+        if (conn.browserAuth) {
+          const origIsAuth = conn.browserAuth.isAuthenticated?.bind(conn.browserAuth);
+          conn.browserAuth.isAuthenticated = (req) => {
+            if (this.checkAuth(req)) return true;
+            return origIsAuth ? origIsAuth(req) : false;
+          };
+          const origAuthInd = conn.browserAuth.authorizeIndex?.bind(conn.browserAuth);
+          conn.browserAuth.authorizeIndex = (req, res) => {
+            if (this.checkAuth(req)) return true;
+            return origAuthInd ? origAuthInd(req, res) : false;
+          };
+        }
+      }
+    });
+
     super(ctx, "webServer");
     this.config = config;
     this.loadState();
@@ -1160,9 +1191,10 @@ export class AuthWebServer extends Service {
     let out = html;
     for (const transform of this.indexTaps) out = transform(out);
 
-    // Polyfill crypto.randomUUID for non-HTTPS / IP environments
+    // Polyfill crypto.randomUUID for non-HTTPS / IP environments and grant host ownership to authenticated operator
     const polyfill = `<script>
 (function() {
+  window.__DSH_TRANSPORT__ = Object.assign(window.__DSH_TRANSPORT__ || {}, { ownsHost: true });
   var c = window.crypto || (window.crypto = {});
   if (typeof c.randomUUID !== 'function') {
     c.randomUUID = function() {
