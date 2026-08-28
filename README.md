@@ -33,12 +33,10 @@ Give your self-hosted deployment a DSH-styled **web login page**, **cookie sessi
 - **Dual-mode authentication and WebSocket protection**
   - Prefers web form / cookie sessions while staying backward-compatible with `HTTP Basic Auth` for CLI tools, `curl`, and automated API clients.
   - Full authentication coverage for both HTTP routes and WebSocket (`upgrade`) channels.
-- **Remote IP privileged RPC trust delegation & Host ownership grant**
+- **Remote IP privileged RPC trust delegation**
   - Normalizes request `Host` and `Origin` headers for authenticated sessions, eliminating HTTP 403 errors when accessing privileged RPC endpoints via a public IP.
-  - Fully compatible with DSH `0.1.2-alpha.1`+ native `browser-auth` and host sandbox isolation, automatically injecting `__DSH_TRANSPORT__.ownsHost` to unlock full host settings persistence on remote VPS deployments.
-- **Web Crypto UUID auto-polyfill & boot-readiness handshake**
+- **Web Crypto UUID auto-polyfill**
   - Injects a safe UUID generator into the HTML `<head>` for non-HTTPS and direct-IP environments, preventing client-side crashes.
-  - Fully supports DSH `0.1.2` asynchronous boot readiness handshake (`__DSH_BOOT_READY__`) and `script-preload` tags.
 
 ---
 

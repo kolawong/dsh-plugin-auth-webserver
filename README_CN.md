@@ -33,12 +33,10 @@
 - **双模鉴权与 WebSocket 实时保护**
   - 网页端优先采用 Web 表单与 Cookie 会话；同时向下兼容 `HTTP Basic Auth`，方便命令行脚本、`curl` 与自动化工具调用。
   - 完整覆盖 HTTP 路由与 WebSocket (`upgrade`) 协议通道。
-- **远端 IP 特权 RPC 网关信任委托 & 宿主权限自动授予**
+- **远端 IP 特权 RPC 网关信任委托**
   - 自动处理请求 `Host` / `Origin` 映射，解决公网 IP 访问时 `settings.describe` 与 `agentPreset.*` 报 `HTTP 403 Forbidden` 的问题。
-  - 完美适配 DSH `0.1.2-alpha.1`+ 原生 `browser-auth` 与宿主沙箱机制，自动向已登录管理员下发 `__DSH_TRANSPORT__.ownsHost` 权限，解除远程 VPS 访问时设置面板空白的限制。
-- **Web Crypto UUID 自动 Polyfill & 异步握手协议补全**
+- **Web Crypto UUID 自动 Polyfill**
   - 自动在页面 `<head>` 中注入安全的 UUID 生成器，解决非 HTTPS 或直接 IP 访问时客户端崩溃的问题。
-  - 完整支持 DSH `0.1.2` 异步启动引导握手（`__DSH_BOOT_READY__`）与 `script-preload` 预加载标签。
 
 ---
 
