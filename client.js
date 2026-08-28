@@ -26,6 +26,7 @@ window.__ModuleLoader__.load({
       usernameLabel: "登录用户名",
       passwordLabel: "登录密码",
       passwordPlaceholder: "留空则关闭密码保护",
+      passwordPlaceholderSet: "已设置密码（留空保持不变）",
       passwordHint: "修改后立即生效；未登录用户访问 Web 界面时会看到登录页面。",
       show: "显示",
       hide: "隐藏",
@@ -49,6 +50,7 @@ window.__ModuleLoader__.load({
       usernameLabel: "Username",
       passwordLabel: "Password",
       passwordPlaceholder: "Leave blank to disable password protection",
+      passwordPlaceholderSet: "Password is set (leave blank to keep unchanged)",
       passwordHint: "Changes apply immediately; unauthenticated visitors see the login page.",
       show: "Show",
       hide: "Hide",
@@ -95,10 +97,12 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(false);
       const [username, setUsername] = useState("");
       const [password, setPassword] = useState("");
+      const [passwordDirty, setPasswordDirty] = useState(false);
       const [showPassword, setShowPassword] = useState(false);
       const [dirty, setDirty] = useState(false);
       const [saving, setSaving] = useState(false);
       const [msg, setMsg] = useState(null);
+      const [authEnabled, setAuthEnabled] = useState(null);
 
       const loadAuth = () => {
         fetch("/api/auth.get")
@@ -106,7 +110,9 @@ window.__ModuleLoader__.load({
           .then(data => {
             if (data && data.ok) {
               setUsername(data.username || "");
-              setPassword(data.password || "");
+              setAuthEnabled(Boolean(data.authEnabled));
+              setPassword("");
+              setPasswordDirty(false);
               setDirty(false);
             }
           })
@@ -120,16 +126,25 @@ window.__ModuleLoader__.load({
       const handleSave = () => {
         setSaving(true);
         setMsg(null);
+        const payload = { username };
+        if (passwordDirty) {
+          payload.password = password;
+        }
         fetch("/api/auth.update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify(payload)
         })
           .then(r => r.json())
           .then(data => {
             setSaving(false);
             if (data && data.ok) {
               setDirty(false);
+              setPasswordDirty(false);
+              setPassword("");
+              if (passwordDirty) {
+                setAuthEnabled(Boolean(password));
+              }
               setMsg({ type: "success", text: t("saveSuccess") });
             } else {
               setMsg({ type: "error", text: t("saveFailed", { message: data && data.error ? data.error : "?" }) });
@@ -158,7 +173,7 @@ window.__ModuleLoader__.load({
         }
       };
 
-      const isProtected = Boolean(password);
+      const isProtected = authEnabled === null ? true : (authEnabled || (passwordDirty && Boolean(password)));
 
       return jsx("li", {
         style: {
@@ -328,8 +343,12 @@ window.__ModuleLoader__.load({
                             jsx("input", {
                               type: showPassword ? "text" : "password",
                               value: password,
-                              onChange: (e) => { setPassword(e.target.value); setDirty(true); },
-                              placeholder: t("passwordPlaceholder"),
+                              onChange: (e) => {
+                                setPassword(e.target.value);
+                                setPasswordDirty(true);
+                                setDirty(true);
+                              },
+                              placeholder: authEnabled ? t("passwordPlaceholderSet") : t("passwordPlaceholderEmpty"),
                               style: {
                                 flex: 1,
                                 height: "34px",
