@@ -1023,7 +1023,7 @@ export class AuthWebServer extends Service {
     const handle = async (req, res) => {
       const rawPath = new URL(req.url ?? "/", "http://x").pathname;
 
-      // Public routes: login endpoint, PWA webmanifest, favicons, robots.txt
+      // Public routes: login endpoint, PWA webmanifest, favicons, robots.txt, plugin static assets
       const isPublicPath =
         rawPath === "/api/auth.login" ||
         rawPath === "/manifest.webmanifest" ||
@@ -1031,7 +1031,8 @@ export class AuthWebServer extends Service {
         rawPath === "/favicon.ico" ||
         rawPath === "/favicon.svg" ||
         rawPath === "/apple-touch-icon.png" ||
-        rawPath === "/robots.txt";
+        rawPath === "/robots.txt" ||
+        rawPath.startsWith("/plugins/");
 
       if (isPublicPath) {
         const route = this.match(rawPath);
