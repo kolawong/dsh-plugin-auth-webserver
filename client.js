@@ -12,7 +12,20 @@ window.__ModuleLoader__.load({
     const React = require("react");
     const { useState, useEffect } = React;
     const { jsxs, jsx } = require("react/jsx-runtime");
-    const { IconChevronDownOutline14, IconCheckOutline16, IconWarningOutline16 } = require("@deepseek-ai/dsh-client-ui-primitives");
+    const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+    if (primitives && typeof primitives === "object") {
+      for (const key of Object.keys(primitives)) {
+        if (key.startsWith("Icon") && key.endsWith("Regular")) {
+          const base = key.slice(0, -7);
+          for (const suffix of ["12", "14", "16", "18", "20", "24", ""]) {
+            if (!primitives[base + suffix]) primitives[base + suffix] = primitives[key];
+          }
+        }
+      }
+    }
+    const IconChevronDownOutline14 = primitives.IconChevronDownOutlineRegular || primitives.IconChevronDownOutline14 || (() => null);
+    const IconCheckOutline16 = primitives.IconCheckOutlineRegular || primitives.IconCheckOutline16 || (() => null);
+    const IconWarningOutline16 = primitives.IconWarningOutlineRegular || primitives.IconWarningOutline16 || (() => null);
 
     /** Locale namespace owning this card's copy. */
     const NS = "settings.plugin.auth-webserver";
@@ -94,7 +107,7 @@ window.__ModuleLoader__.load({
         }
         return val;
       };
-      const [open, setOpen] = useState(false);
+      const [open, setOpen] = useState(props && props.view === "page");
       const [username, setUsername] = useState("");
       const [password, setPassword] = useState("");
       const [passwordDirty, setPasswordDirty] = useState(false);
@@ -174,6 +187,10 @@ window.__ModuleLoader__.load({
       };
 
       const isProtected = authEnabled === null ? true : (authEnabled || (passwordDirty && Boolean(password)));
+
+      if (props && props.view === "summary") {
+        return t("description");
+      }
 
       return jsx("li", {
         style: {
@@ -490,16 +507,48 @@ window.__ModuleLoader__.load({
 
     exports.inject = ["locale", "slots"];
 
+    function safeSlotRegister(ctx, options, component) {
+      try {
+        return ctx.slots.register(options, component);
+      } catch (error) {
+        console.warn(`[auth-webserver] slot "${options.name}" registration skipped:`, error);
+        return undefined;
+      }
+    }
+
     exports.apply = function (ctx) {
       ctx.locale.register(NS, { zh, en });
+
+      // 1. DSH 0.1.6+ Plugin Manager: bundle-level configuration
+      ctx.slots.inject("plugins.bundle.config", function* () {
+        const registration = safeSlotRegister(ctx, {
+          name: "plugins.bundle.config",
+          key: "dsh-plugin-auth-webserver",
+          locale: NS,
+        }, AuthCard);
+        if (registration !== undefined) yield registration;
+      });
+
+      // 2. DSH 0.1.6+ Plugin Manager: row-level configuration
+      ctx.slots.inject("plugins.row.config", function* () {
+        const registration = safeSlotRegister(ctx, {
+          name: "plugins.row.config",
+          key: "dsh-plugin-auth-webserver#webserver-auth",
+          locale: NS,
+        }, AuthCard);
+        if (registration !== undefined) yield registration;
+      });
+
+      // 3. Legacy DSH (< 0.1.6) Settings modal slot
       ctx.slots.inject("settings.plugin.item", function* () {
-        yield ctx.slots.register({
+        const registration = safeSlotRegister(ctx, {
           name: "settings.plugin.item",
           key: "auth-webserver",
           id: "auth-webserver",
           order: -1,
           locale: NS,
         }, AuthCard);
+        if (registration !== undefined) yield registration;
       });
     };
 

@@ -161,6 +161,7 @@ export class AuthWebServer extends Service {
     password: z.string().default("").role("secret"),
     realm: z.string().default("DeepSeek Harness Authentication"),
   });
+  static { this.Config.meta.volatile = true; }
 
   exact = new Map();
   prefixes = new Map();
@@ -179,7 +180,9 @@ export class AuthWebServer extends Service {
   constructor(ctx, config) {
     ctx.inject(["settings"], (sctx) => {
       try {
-        sctx.settings.register("auth-webserver", AuthWebServer.Config);
+        if (typeof sctx.settings?.register === "function") {
+          sctx.settings.register("auth-webserver", AuthWebServer.Config);
+        }
       } catch (e) {
         ctx.logger?.warn?.("[AuthWebServer] Settings registration:", e);
       }
@@ -1276,5 +1279,6 @@ export function renderIndexInjections(html, rows) {
   return out;
 }
 
+export const Config = AuthWebServer.Config;
 export default AuthWebServer;
 
