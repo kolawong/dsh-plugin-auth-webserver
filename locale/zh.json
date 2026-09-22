@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-plugin-auth-webserver",
+    "description": "Web 服务 HTTP Basic 身份验证：双语登录对话框、Web UI 设置卡片、远程 IP 访问控制与自建服务器安全防护。"
+  }
+}
