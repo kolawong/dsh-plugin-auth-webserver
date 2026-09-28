@@ -1,0 +1,16 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12.5 16V11.5C12.5 8.46 14.96 6 18 6C21.04 6 23.5 8.46 23.5 11.5V16" stroke="url(#auth_shackle)" stroke-width="2.8" stroke-linecap="round" />
+  <rect x="8" y="15" width="20" height="14" rx="3.5" fill="url(#auth_body)" />
+  <circle cx="18" cy="20.5" r="2.2" fill="#FFFFFF" />
+  <path d="M18 21.5V25" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" />
+  <defs>
+    <linearGradient id="auth_shackle" x1="12.5" y1="6" x2="23.5" y2="16" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58BCC8" />
+      <stop offset="1" stop-color="#658EFF" />
+    </linearGradient>
+    <linearGradient id="auth_body" x1="8" y1="15" x2="28" y2="29" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A65E8" />
+      <stop offset="1" stop-color="#143DA0" />
+    </linearGradient>
+  </defs>
+</svg>

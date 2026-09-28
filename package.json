@@ -53,7 +53,8 @@
     "README_CN.md",
     "LICENSE",
     "assets/hero.png",
-    "locale/*.json"
+    "locale/*.json",
+    "icon.svg"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0",
@@ -61,5 +62,6 @@
   },
   "scripts": {
     "build": "node -c index.js && node -c client.js"
-  }
+  },
+  "icon": "./icon.svg"
 }
