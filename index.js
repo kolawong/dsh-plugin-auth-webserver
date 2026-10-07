@@ -1921,7 +1921,20 @@ export class AuthWebServer extends Service {
         rawPath === "/favicon.svg" ||
         rawPath === "/apple-touch-icon.png" ||
         rawPath === "/robots.txt" ||
-        rawPath.startsWith("/plugins/");
+        rawPath.startsWith("/plugins/") ||
+        // The Factory provider plugin's inference gateway (/a, /o, /openai).
+        // DSH's own LLM layer calls these over loopback with no credentials, so
+        // gating them here makes every model call fail as an auth error that
+        // surfaces as "API 密钥无效" even though the key is fine.
+        //
+        // Safe to leave unauthenticated because that plugin independently
+        // enforces loopback-only on the socket address, which a remote caller
+        // cannot spoof. Its management routes — accounts, config, journal,
+        // quota, token-stats, test — are deliberately NOT listed here and stay
+        // behind this login.
+        rawPath.startsWith("/api/dsh-factory-provider/a/") ||
+        rawPath.startsWith("/api/dsh-factory-provider/o/") ||
+        rawPath.startsWith("/api/dsh-factory-provider/openai/");
 
       if (isPublicPath) {
         const route = this.match(rawPath);
