@@ -40,6 +40,9 @@ export declare class AuthWebServer extends Service {
   constructor(ctx: Context, config: AuthWebServerConfig)
   get port(): number
   get host(): string
+  get protocol(): 'http:' | 'https:'
+  get origin(): string
+  getOrigin(): string
   /** Effective username: `DSH_AUTH_USER` env overrides config/state. */
   get effectiveUsername(): string
   /** Effective password: `DSH_AUTH_PASS` env overrides config/state. */

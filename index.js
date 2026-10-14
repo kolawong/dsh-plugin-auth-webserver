@@ -474,6 +474,21 @@ export class AuthWebServer extends Service {
     return this.config.host;
   }
 
+  get protocol() {
+    return "http:";
+  }
+
+  get origin() {
+    return this.getOrigin();
+  }
+
+  getOrigin() {
+    const raw = this.config.host || "127.0.0.1";
+    const host = raw === "0.0.0.0" || raw === "::" ? "127.0.0.1" : (raw.includes(":") && !raw.startsWith("[") ? `[${raw}]` : raw);
+    const port = this.listenedPort ?? this.config.port ?? 3080;
+    return `${this.protocol}//${host}:${port}`;
+  }
+
   /** Effective credentials: environment overrides win over config/state. */
   get effectiveUsername() {
     return process.env.DSH_AUTH_USER || this.config.username || "admin";
