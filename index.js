@@ -232,7 +232,7 @@ export class AuthWebServer extends Service {
     });
 
     super(ctx, "webServer");
-    this.config = config;
+    this.config = { ...config };
     this.loadState();
     this.initSecret();
     this.ensureAuthEnabled();
