@@ -232,7 +232,14 @@ export class AuthWebServer extends Service {
     });
 
     super(ctx, "webServer");
-    this.config = { ...config };
+    this.config = {
+      username: "admin",
+      password: "",
+      realm: "DeepSeek Harness Authentication",
+      ...config,
+    };
+    this.config.host = config?.host || "0.0.0.0";
+    this.config.port = config?.port || 3080;
     this.loadState();
     this.initSecret();
     this.ensureAuthEnabled();
@@ -467,11 +474,11 @@ export class AuthWebServer extends Service {
   }
 
   get port() {
-    return this.listenedPort;
+    return this.listenedPort ?? this.config?.port ?? 3080;
   }
 
   get host() {
-    return this.config.host;
+    return this.config?.host || "0.0.0.0";
   }
 
   get protocol() {
@@ -483,9 +490,9 @@ export class AuthWebServer extends Service {
   }
 
   getOrigin() {
-    const raw = this.config.host || "127.0.0.1";
+    const raw = this.config?.host || "127.0.0.1";
     const host = raw === "0.0.0.0" || raw === "::" ? "127.0.0.1" : (raw.includes(":") && !raw.startsWith("[") ? `[${raw}]` : raw);
-    const port = this.listenedPort ?? this.config.port ?? 3080;
+    const port = this.listenedPort ?? this.config?.port ?? 3080;
     return `${this.protocol}//${host}:${port}`;
   }
 
